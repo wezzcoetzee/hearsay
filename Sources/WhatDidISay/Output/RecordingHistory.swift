@@ -1,0 +1,97 @@
+import Foundation
+import Combine
+
+struct HistoryEntry: Codable, Identifiable {
+    let id: UUID
+    let date: Date
+    let source: String
+    let notePath: String?
+    let recordingPath: String?
+    let segmentCount: Int
+
+    var noteURL: URL? { notePath.map { URL(fileURLToPath: $0) } }
+    var recordingURL: URL? { recordingPath.map { URL(fileURLToPath: $0) } }
+}
+
+private extension URL {
+    init(fileURLToPath path: String) {
+        self.init(fileURLWithPath: path)
+    }
+}
+
+@MainActor
+final class RecordingHistory: ObservableObject {
+    @Published private(set) var entries: [HistoryEntry] = []
+
+    private let fileURL: URL
+    private let maxEntries = 20
+
+    init() {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("WhatDidISay", isDirectory: true)
+        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        self.fileURL = base.appendingPathComponent("history.json")
+        load()
+    }
+
+    func add(_ session: RecordingSession) {
+        let entry = HistoryEntry(
+            id: session.id,
+            date: session.startedAt,
+            source: session.source.displayName,
+            notePath: session.noteURL?.path,
+            recordingPath: session.directory.path,
+            segmentCount: session.segmentCount
+        )
+        entries.insert(entry, at: 0)
+        if entries.count > maxEntries {
+            let dropCount = entries.count - maxEntries
+            entries.suffix(dropCount).forEach(deleteRecording)
+            entries.removeLast(dropCount)
+        }
+        save()
+    }
+
+    func remove(_ entry: HistoryEntry) {
+        deleteRecording(entry)
+        entries.removeAll { $0.id == entry.id }
+        save()
+    }
+
+    func clear() {
+        entries.forEach(deleteRecording)
+        entries.removeAll()
+        save()
+    }
+
+    private func deleteRecording(_ entry: HistoryEntry) {
+        guard let url = entry.recordingURL else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    private func load() {
+        guard let data = try? Data(contentsOf: fileURL) else { return }
+        entries = (try? JSONDecoder.iso.decode([HistoryEntry].self, from: data)) ?? []
+    }
+
+    private func save() {
+        guard let data = try? JSONEncoder.iso.encode(entries) else { return }
+        try? data.write(to: fileURL)
+    }
+}
+
+private extension JSONEncoder {
+    static var iso: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+}
+
+private extension JSONDecoder {
+    static var iso: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+}

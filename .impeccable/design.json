@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-15T00:00:00Z",
+  "title": "Design System: what-did-i-say",
+  "extensions": {
+    "colorMeta": {
+      "accent-tint": { "role": "primary", "displayName": "System Accent", "canonical": "system .accentColor (user-configurable; ~#007AFF default light)", "tonalRamp": ["#002E5C", "#004A94", "#0060C0", "#007AFF", "#3D97FF", "#6FB2FF", "#A6CFFF", "#D6E9FF"] },
+      "recording-red": { "role": "secondary", "displayName": "Recording Red", "canonical": "system .red (~#FF3B30 light)", "tonalRamp": ["#4D0F0A", "#7A1810", "#A81F15", "#D5271B", "#FF3B30", "#FF6B62", "#FF9C96", "#FFCECB"] },
+      "processing-orange": { "role": "secondary", "displayName": "Processing Orange", "canonical": "system .orange (~#FF9500 light)", "tonalRamp": ["#4D2D00", "#7A4700", "#A86100", "#D57C00", "#FF9500", "#FFB143", "#FFCC85", "#FFE6C2"] },
+      "success-green": { "role": "secondary", "displayName": "Success Green", "canonical": "system .green (~#34C759 light)", "tonalRamp": ["#0D3D1B", "#14612B", "#1B853B", "#22A94B", "#34C759", "#67D585", "#99E3AC", "#CCF1D6"] },
+      "label-primary": { "role": "neutral", "displayName": "Primary Label", "canonical": "system .primary (dynamic; ~#1D1D1F light / ~#F5F5F7 dark)", "tonalRamp": ["#1D1D1F", "#3A3A3C", "#545456", "#6E6E70", "#8E8E93", "#B0B0B5", "#D1D1D6", "#F2F2F7"] },
+      "label-secondary": { "role": "neutral", "displayName": "Secondary Label", "canonical": "system .secondary (dynamic translucent; ~#8E8E93)", "tonalRamp": ["#2C2C2E", "#48484A", "#636366", "#8E8E93", "#AEAEB2", "#C7C7CC", "#D1D1D6", "#E5E5EA"] },
+      "surface-material": { "role": "neutral", "displayName": "Surface Material", "canonical": "system popover/window vibrant material (~#F2F2F7 light / ~#1E1E1E dark)", "tonalRamp": ["#1C1C1E", "#2C2C2E", "#3A3A3C", "#636366", "#AEAEB2", "#D1D1D6", "#E5E5EA", "#F2F2F7"] },
+      "fill-quaternary": { "role": "neutral", "displayName": "Quaternary Fill", "canonical": "system .quaternary (~#E5E5EA at ~40% opacity)", "tonalRamp": ["#2C2C2E", "#3A3A3C", "#545456", "#8E8E93", "#C7C7CC", "#D1D1D6", "#E5E5EA", "#F2F2F7"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The app name in the onboarding header only; the single largest text in the product." },
+      "headline": { "displayName": "Headline", "purpose": "Popover title, modal section headings, and the confirmation toast title." },
+      "title": { "displayName": "Title", "purpose": "Onboarding step titles and the done-state heading." },
+      "body": { "displayName": "Body", "purpose": "Explanatory copy and the recording timer label." },
+      "label": { "displayName": "Label", "purpose": "The most-used size: settings rows, toggles, history, timestamps, hints." },
+      "mono": { "displayName": "Mono", "purpose": "Detection countdown and elapsed recording clock; tabular digits so they do not jitter." }
+    },
+    "shadows": [
+      { "name": "system-window", "value": "delegated to macOS window/panel material", "purpose": "The only depth in the app. Never author a custom box-shadow; the OS draws it." }
+    ],
+    "motion": [
+      { "name": "system-default", "value": "SwiftUI implicit state transitions", "purpose": "No custom choreography. State changes use the platform's default timing; respect Reduce Motion." }
+    ],
+    "breakpoints": [
+      { "name": "popover", "value": "320px" },
+      { "name": "toast", "value": "340px" },
+      { "name": "participant-modal", "value": "380px" },
+      { "name": "onboarding", "value": "460px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single lead action on a surface: Start Recording, Continue, Save, Grant Permission.",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"currentColor\" aria-hidden=\"true\"><circle cx=\"8\" cy=\"8\" r=\"7\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/><circle cx=\"8\" cy=\"8\" r=\"3.5\"/></svg>Start Recording</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 6px; background: #007AFF; color: #FFFFFF; font: 600 13px/1.2 -apple-system, 'SF Pro Text', system-ui, sans-serif; padding: 6px 12px; border: none; border-radius: 6px; transition: filter 0.15s ease-out; } .ds-btn-primary:hover { filter: brightness(1.08); } .ds-btn-primary:active { filter: brightness(0.94); } .ds-btn-primary:focus-visible { outline: 3px solid rgba(0,122,255,0.35); outline-offset: 1px; }"
+    },
+    {
+      "name": "Primary Button (Recording)",
+      "kind": "button",
+      "refersTo": "button-primary-recording",
+      "description": "The primary button while recording is live; the control itself becomes the recording signal.",
+      "html": "<button class=\"ds-btn-recording\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"currentColor\" aria-hidden=\"true\"><circle cx=\"8\" cy=\"8\" r=\"7\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/><rect x=\"5.5\" y=\"5.5\" width=\"5\" height=\"5\" rx=\"1\"/></svg>Stop Recording</button>",
+      "css": ".ds-btn-recording { display: inline-flex; align-items: center; gap: 6px; background: #FF3B30; color: #FFFFFF; font: 600 13px/1.2 -apple-system, 'SF Pro Text', system-ui, sans-serif; padding: 6px 12px; border: none; border-radius: 6px; transition: filter 0.15s ease-out; } .ds-btn-recording:hover { filter: brightness(1.08); } .ds-btn-recording:active { filter: brightness(0.94); } .ds-btn-recording:focus-visible { outline: 3px solid rgba(255,59,48,0.35); outline-offset: 1px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Bordered secondary action, often at small control size: Open Setup Guide, Back.",
+      "html": "<button class=\"ds-btn-secondary\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 16 16\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M8 1.5l1.6 4.3 4.6.2-3.6 2.9 1.3 4.4L8 11.2 3.6 13.3l1.3-4.4L1.3 6l4.6-.2z\"/></svg>Open Setup Guide</button>",
+      "css": ".ds-btn-secondary { display: inline-flex; align-items: center; gap: 5px; background: rgba(120,120,128,0.12); color: #1D1D1F; font: 500 11px/1.2 -apple-system, 'SF Pro Text', system-ui, sans-serif; padding: 4px 10px; border: none; border-radius: 6px; transition: background 0.15s ease-out; } .ds-btn-secondary:hover { background: rgba(120,120,128,0.2); } .ds-btn-secondary:focus-visible { outline: 3px solid rgba(0,122,255,0.35); outline-offset: 1px; }"
+    },
+    {
+      "name": "Switch Toggle",
+      "kind": "custom",
+      "refersTo": "toggle-switch",
+      "description": "Stock system switch at mini control size with a caption label; used for auto-detect, diarization, AI summary.",
+      "html": "<label class=\"ds-toggle\"><input type=\"checkbox\" checked><span class=\"ds-toggle-track\"><span class=\"ds-toggle-knob\"></span></span><span class=\"ds-toggle-label\">Auto-detect huddles &amp; calls</span></label>",
+      "css": ".ds-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; } .ds-toggle input { position: absolute; opacity: 0; } .ds-toggle-track { width: 26px; height: 16px; border-radius: 8px; background: rgba(120,120,128,0.32); transition: background 0.18s ease-out; position: relative; flex: none; } .ds-toggle-knob { position: absolute; top: 1px; left: 1px; width: 14px; height: 14px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 0 2px rgba(0,0,0,0.25); transition: transform 0.18s ease-out; } .ds-toggle input:checked + .ds-toggle-track { background: #007AFF; } .ds-toggle input:checked + .ds-toggle-track .ds-toggle-knob { transform: translateX(10px); } .ds-toggle input:focus-visible + .ds-toggle-track { outline: 3px solid rgba(0,122,255,0.35); outline-offset: 1px; } .ds-toggle-label { font: 400 11px/1.2 -apple-system, 'SF Pro Text', system-ui, sans-serif; color: #1D1D1F; }"
+    },
+    {
+      "name": "Rounded Text Field",
+      "kind": "input",
+      "refersTo": "textfield-rounded",
+      "description": "System rounded-border field for names, model, and vault; SecureField variant for the API key.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Add participant\" />",
+      "css": ".ds-input { font: 400 13px/1.2 -apple-system, 'SF Pro Text', system-ui, sans-serif; color: #1D1D1F; background: #FFFFFF; padding: 4px 8px; border: 1px solid rgba(120,120,128,0.3); border-radius: 6px; transition: border-color 0.15s ease-out, box-shadow 0.15s ease-out; } .ds-input::placeholder { color: #8E8E93; } .ds-input:focus-visible { outline: none; border-color: #007AFF; box-shadow: 0 0 0 3px rgba(0,122,255,0.25); }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "custom",
+      "refersTo": "status-badge",
+      "description": "Signature indicator: an 8pt colored dot plus a caption label, in the popover header. Color and text always travel together.",
+      "html": "<span class=\"ds-status\"><span class=\"ds-status-dot\"></span><span class=\"ds-status-text\">Recording</span></span>",
+      "css": ".ds-status { display: inline-flex; align-items: center; gap: 5px; } .ds-status-dot { width: 8px; height: 8px; border-radius: 50%; background: #FF3B30; flex: none; } .ds-status-text { font: 400 11px/1.2 -apple-system, 'SF Pro Text', system-ui, sans-serif; color: #8E8E93; }"
+    },
+    {
+      "name": "Privacy Callout",
+      "kind": "card",
+      "refersTo": "callout-box",
+      "description": "The one lifted element inside a surface: a quaternary-fill box with a lock symbol, stating audio stays on-device. No border, no shadow.",
+      "html": "<div class=\"ds-callout\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M4.5 7V5.5a3.5 3.5 0 017 0V7h.5a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V8a1 1 0 011-1zm1.5 0h4V5.5a2 2 0 10-4 0z\"/></svg><span>Everything is transcribed on-device by default. Audio never leaves your Mac unless you turn on cloud summaries.</span></div>",
+      "css": ".ds-callout { display: flex; align-items: flex-start; gap: 8px; background: rgba(120,120,128,0.16); color: #8E8E93; font: 400 13px/1.35 -apple-system, 'SF Pro Text', system-ui, sans-serif; padding: 12px; border-radius: 10px; } .ds-callout svg { flex: none; margin-top: 1px; }"
+    },
+    {
+      "name": "Recording Countdown Toast",
+      "kind": "custom",
+      "refersTo": "callout-box",
+      "description": "Signature consent surface: a floating bottom-right panel that announces a detected call, counts down 10s, and offers Ignore / Start Now before recording begins.",
+      "html": "<div class=\"ds-toast\"><div class=\"ds-toast-head\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"#FF3B30\" aria-hidden=\"true\"><circle cx=\"8\" cy=\"8\" r=\"7\" fill=\"none\" stroke=\"#FF3B30\" stroke-width=\"1.5\"/><circle cx=\"8\" cy=\"8\" r=\"3.5\"/></svg><span class=\"ds-toast-title\">Slack huddle detected</span><span class=\"ds-toast-count\">10s</span></div><p class=\"ds-toast-body\">Recording will start automatically. All participants may be recorded, record responsibly.</p><div class=\"ds-toast-actions\"><button class=\"ds-btn-secondary\">Ignore</button><button class=\"ds-btn-primary\">Start Now</button></div></div>",
+      "css": ".ds-toast { width: 340px; box-sizing: border-box; background: rgba(242,242,247,0.92); backdrop-filter: blur(20px); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px; } .ds-toast-head { display: flex; align-items: center; gap: 8px; } .ds-toast-title { font: 600 15px/1.2 -apple-system, 'SF Pro', system-ui, sans-serif; color: #1D1D1F; } .ds-toast-count { margin-left: auto; font: 400 13px/1.2 'SF Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; color: #8E8E93; } .ds-toast-body { margin: 0; font: 400 11px/1.35 -apple-system, 'SF Pro Text', system-ui, sans-serif; color: #8E8E93; } .ds-toast-actions { display: flex; justify-content: space-between; align-items: center; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Instrument",
+    "overview": "This is a precision tool that sits in the menu bar and stays out of the way. Every surface is built from AppKit and SwiftUI system primitives, so the app reads as something that shipped with macOS rather than something bolted onto it. Color, type, materials, and controls are all inherited from the operating system, which means the interface adapts automatically to the user's appearance, accent color, and Dynamic Type without a single override. The system is deliberately thin: no custom palette, no custom font, no bespoke component library. That absence is the design; familiarity is the trust mechanism. Because the core action is recording a private conversation, the interface earns confidence by being legible and boring in exactly the way a system utility is boring. The one place the design raises its voice is state and consent: the recording dot, the countdown toast, the permission flow, and the single cloud-summary boundary are all made obvious, never buried in chrome.",
+    "keyCharacteristics": [
+      "System-semantic color only; the OS owns the palette, light and dark",
+      "SF Pro throughout, via semantic text styles that respect Dynamic Type",
+      "Flat by default; depth comes from native window/popover materials, not custom shadows",
+      "Stock, unadorned controls; the only custom elements are status indicators",
+      "Fixed-width surfaces sized to their glance-length purpose (320pt popover, compact panels)",
+      "State and consent are loud; everything else recedes"
+    ],
+    "rules": [
+      { "name": "The Inherited Palette Rule", "body": "Never introduce a literal hex value in UI code. Always reach for the semantic SwiftUI color (.red, .secondary, .accentColor, .tint). A hardcoded color breaks dark mode, breaks the user's accent choice, and breaks Increase Contrast.", "section": "colors" },
+      { "name": "The Red Means Recording Rule", "body": "Red is spent only on the recording state and on errors. It never appears as an accent, a highlight, or a decorative touch.", "section": "colors" },
+      { "name": "The Semantic Scale Rule", "body": "Size and weight are chosen by naming a text style (.headline, .caption), never by setting an explicit point size on body text. The only explicit sizes allowed are on SF Symbol glyphs in headers, where the symbol functions as illustration.", "section": "typography" },
+      { "name": "The Secondary-First Rule", "body": "Default body and label text to .secondary. Primary label weight is reserved for the one or two things on a surface that genuinely lead.", "section": "typography" },
+      { "name": "The No Custom Shadow Rule", "body": "Never add a .shadow() or a synthetic glass/blur layer. macOS already provides the correct window shadow and material vibrancy.", "section": "elevation" },
+      { "name": "The Tonal Lift Rule", "body": "When an element inside a surface needs to stand apart, raise it with a .quaternary fill and a 10px corner radius, not a shadow or a stripe.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use semantic SwiftUI colors (.red, .secondary, .accentColor, .tint) for every color. The OS owns the palette.",
+      "Do choose type by naming a semantic text style (.headline, .caption), so Dynamic Type works without effort.",
+      "Do default text to .secondary; reserve primary weight for the one thing that leads.",
+      "Do keep red for the recording state and errors only.",
+      "Do pair every status color with a text label and an SF Symbol; never rely on color alone.",
+      "Do use stock .borderedProminent / .bordered / .borderless buttons and .switch toggles as-is.",
+      "Do lean on native window materials and transparent titlebars for depth; let macOS draw the shadow.",
+      "Do make capture state and the single cloud-summary boundary obvious.",
+      "Do reveal advanced settings progressively."
+    ],
+    "donts": [
+      "Don't hardcode a hex color anywhere in UI code; it breaks dark mode, the user's accent, and Increase Contrast.",
+      "Don't add custom window chrome, non-native controls, or any Electron / web-app feel.",
+      "Don't build loud SaaS dashboards: no gradient accents, no hero-metric templates, no marketing-style cards in the popover.",
+      "Don't expose every option at once in a dense settings wall; simple by default, depth only when relevant.",
+      "Don't ship anything that reads as spyware-adjacent; recording state and data destination must always be legible.",
+      "Don't add .shadow(), decorative glassmorphism, or a blur on top of the system's own material.",
+      "Don't use a border-left/border-right colored stripe as an accent on any callout, row, or alert.",
+      "Don't set explicit point sizes on body text; only SF Symbol glyphs in headers get an explicit .system(size:).",
+      "Don't spend red, green, or orange on decoration; each is a state signal, not a highlight."
+    ]
+  }
+}
