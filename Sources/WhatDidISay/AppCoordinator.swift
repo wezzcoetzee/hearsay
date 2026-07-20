@@ -65,6 +65,10 @@ final class AppCoordinator: ObservableObject {
             }
             .store(in: &bag)
 
+        settings.$showRecordingPanel
+            .sink { [weak self] enabled in self?.controlPanel.isEnabled = enabled }
+            .store(in: &bag)
+
         onboarding.presentIfNeeded()
     }
 }

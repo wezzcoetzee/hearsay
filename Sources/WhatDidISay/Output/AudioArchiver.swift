@@ -1,19 +1,21 @@
 import Foundation
 
 /// Copies a finished call's audio files into the user-chosen audio folder,
-/// named to match the note ("2026-07-18 0930 Slack Huddle system.m4a").
+/// named per the user's filename format setting.
 enum AudioArchiver {
-    static func archive(_ session: RecordingSession, to folder: URL) throws {
+    static func archive(_ session: RecordingSession, to folder: URL, format: String) throws {
         let didAccess = folder.startAccessingSecurityScopedResource()
         defer { if didAccess { folder.stopAccessingSecurityScopedResource() } }
 
         let fm = FileManager.default
-        let base = "\(MarkdownWriter.fileTimestamp(session.startedAt)) \(session.source.displayName)"
         let tracks = [("system", session.systemAudioURL), ("mic", session.micAudioURL)]
         for (track, source) in tracks where fm.fileExists(atPath: source.path) {
-            let destination = uniqueURL(base: "\(base) \(track)",
-                                        ext: source.pathExtension,
-                                        in: folder)
+            let name = AudioFilenameFormatter.render(
+                format: format,
+                date: session.startedAt,
+                source: session.source,
+                track: track)
+            let destination = uniqueURL(base: name, ext: source.pathExtension, in: folder)
             try fm.copyItem(at: source, to: destination)
         }
     }

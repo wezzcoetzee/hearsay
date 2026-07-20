@@ -15,11 +15,14 @@ final class Settings: ObservableObject {
         static let diarize = "diarizeEnabled"
         static let keepAudio = "keepAudioEnabled"
         static let audioBookmark = "audioFolderBookmark"
+        static let audioFilenameFormat = "audioFilenameFormat"
         static let acknowledgedConsent = "acknowledgedRecordingConsent"
         static let acknowledgedCloud = "acknowledgedCloudSummary"
+        static let showRecordingPanel = "showRecordingPanel"
     }
 
     static let availableModels = ["tiny", "base", "small", "large-v3"]
+    static let defaultAudioFilenameFormat = "{date} {time} {source} {track}"
 
     @Published var model: String {
         didSet { defaults.set(model, forKey: Keys.model) }
@@ -65,6 +68,14 @@ final class Settings: ObservableObject {
         didSet { defaults.set(keepAudio, forKey: Keys.keepAudio) }
     }
 
+    @Published var audioFilenameFormat: String {
+        didSet { defaults.set(audioFilenameFormat, forKey: Keys.audioFilenameFormat) }
+    }
+
+    @Published var showRecordingPanel: Bool {
+        didSet { defaults.set(showRecordingPanel, forKey: Keys.showRecordingPanel) }
+    }
+
     @Published private(set) var outputFolderPath: String?
     @Published private(set) var audioFolderPath: String?
 
@@ -88,6 +99,8 @@ final class Settings: ObservableObject {
         self.localSummaryModel = defaults.string(forKey: Keys.localSummaryModel) ?? "llama3.2"
         self.diarize = defaults.bool(forKey: Keys.diarize)
         self.keepAudio = defaults.bool(forKey: Keys.keepAudio)
+        self.audioFilenameFormat = defaults.string(forKey: Keys.audioFilenameFormat) ?? Self.defaultAudioFilenameFormat
+        self.showRecordingPanel = defaults.object(forKey: Keys.showRecordingPanel) as? Bool ?? true
         self.launchAtLogin = LoginItem.isEnabled
         self.hasAcknowledgedConsent = defaults.bool(forKey: Keys.acknowledgedConsent)
         self.hasAcknowledgedCloud = defaults.bool(forKey: Keys.acknowledgedCloud)

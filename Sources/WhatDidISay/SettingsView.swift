@@ -16,6 +16,13 @@ struct SettingsView: View {
                     .toggleStyle(.switch)
                     .controlSize(.small)
                     helper("Start \(AppInfo.displayName) automatically when you log in to your Mac.")
+
+                    Toggle(isOn: $settings.showRecordingPanel) {
+                        Text("Show recording panel")
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    helper("Shows a small floating panel with a live timer and stop button while recording.")
                 }
 
                 section("Transcription") {
@@ -60,6 +67,10 @@ struct SettingsView: View {
                             }
                             .controlSize(.small)
                         }
+                        TextField("Filename format", text: $settings.audioFilenameFormat)
+                            .textFieldStyle(.roundedBorder)
+                            .controlSize(.small)
+                        helper("Tokens: {date} {time} {source} {track}")
                     }
                     helper(settings.keepAudio
                            ? "After a call is transcribed, its audio files are saved to this folder. Without a folder, audio is still deleted."

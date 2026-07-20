@@ -9,11 +9,25 @@ final class RecordingControlPanelController: ObservableObject {
 
     var onStop: (() -> Void)?
 
+    var isEnabled = true {
+        didSet { reconcile() }
+    }
+
+    private var recordingSince: Date?
     private var panel: NSPanel?
 
     func update(for state: RecordingController.State) {
         if case .recording(let since) = state {
-            show(since: since)
+            recordingSince = since
+        } else {
+            recordingSince = nil
+        }
+        reconcile()
+    }
+
+    private func reconcile() {
+        if let recordingSince, isEnabled {
+            show(since: recordingSince)
         } else {
             hide()
         }

@@ -72,7 +72,7 @@ struct OnboardingView: View {
     var onRelaunch: () -> Void
 
     @State private var step = 0
-    private let lastStep = 4
+    private let lastStep = 5
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -134,6 +134,7 @@ struct OnboardingView: View {
                 permissions.openSettings(.screenRecording)
             })
         case 3: vaultStep
+        case 4: audioStep
         default: doneStep
         }
     }
@@ -220,6 +221,57 @@ struct OnboardingView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
             }
+        }
+    }
+
+    private var audioStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Image(systemName: "waveform.circle.fill").font(.system(size: 26)).foregroundStyle(.tint).frame(width: 40)
+                Text("Audio").font(.title3).bold()
+                Spacer()
+                Toggle("", isOn: $settings.keepAudio)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .accessibilityLabel("Keep audio recordings")
+            }
+            Text(settings.keepAudio
+                 ? "After a call is transcribed, its audio files are saved to this folder. Without a folder, audio is still deleted."
+                 : "Audio is deleted once the note is saved. Turn this on to keep the recordings.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if settings.keepAudio {
+                HStack(spacing: 8) {
+                    Text("Save to").foregroundStyle(.secondary)
+                    Spacer()
+                    statusPill(settings.audioFolderPath != nil ? .granted : .denied, granted: "Set", pending: "Not set")
+                }
+                if let name = settings.audioFolderName {
+                    HStack {
+                        Label(name, systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .lineLimit(1).truncationMode(.middle)
+                        Spacer()
+                        Button("Change") { settings.chooseAudioFolder() }
+                    }
+                } else {
+                    Button {
+                        settings.chooseAudioFolder()
+                    } label: {
+                        Text("Choose Folder").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField("Filename format", text: $settings.audioFilenameFormat)
+                        .textFieldStyle(.roundedBorder)
+                    Text("Tokens: {date} {time} {source} {track}")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
         }
     }
 

@@ -216,7 +216,7 @@ final class RecordingController: ObservableObject {
             return
         }
         do {
-            try AudioArchiver.archive(session, to: folder)
+            try AudioArchiver.archive(session, to: folder, format: settings.audioFilenameFormat)
             session.deleteRecording()
         } catch {
             NSLog("Audio archive failed: \(error)")
