@@ -49,6 +49,13 @@ import Testing
         #expect(phases == [.transcribing, .identifyingSpeakers])
     }
 
+    @Test func passesParticipantHintsToTranscriber() async throws {
+        let transcriber = FakeTranscriber(others: [], mine: [])
+        _ = try await builder(transcriber)
+            .build(system: system, mic: mic, model: "base", diarize: false, hints: ["Ada Lovelace"])
+        #expect(transcriber.receivedHints == ["Ada Lovelace"])
+    }
+
     @Test func skipsIdentifyingPhaseWhenDiarizeDisabled() async throws {
         var phases: [TranscriptBuilder.Phase] = []
         let transcriber = FakeTranscriber(others: [], mine: [])

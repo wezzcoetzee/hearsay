@@ -42,4 +42,17 @@ import Testing
     @Test func deduplicatesRepeatedNames() {
         #expect(ParticipantDetector.filterNames(["Ada Lovelace", "Ada Lovelace"]) == ["Ada Lovelace"])
     }
+
+    @Test func rejectsCapitalisedUIPhrases() {
+        let dropped = ParticipantDetector.filterNames([
+            "New Message", "Meeting Notes", "Recording", "Reactions"
+        ])
+        #expect(dropped.isEmpty)
+    }
+
+    @Test func keepsNamesWithWordLikeFirstNames() {
+        let names = ParticipantDetector.filterNames(["Will Chen", "April Reyes"])
+        #expect(names.contains("Will Chen"))
+        #expect(names.contains("April Reyes"))
+    }
 }

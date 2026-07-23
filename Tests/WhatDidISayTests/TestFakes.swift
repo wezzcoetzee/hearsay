@@ -1,12 +1,19 @@
 import Foundation
 @testable import WhatDidISay
 
-struct FakeTranscriber: Transcribing {
+final class FakeTranscriber: Transcribing, @unchecked Sendable {
     var others: [TranscriptSegment] = []
     var mine: [TranscriptSegment] = []
+    private(set) var receivedHints: [String] = []
 
-    func transcribe(url: URL, speaker: Speaker, model: String) async throws -> [TranscriptSegment] {
-        speaker == .others ? others : mine
+    init(others: [TranscriptSegment] = [], mine: [TranscriptSegment] = []) {
+        self.others = others
+        self.mine = mine
+    }
+
+    func transcribe(url: URL, speaker: Speaker, model: String, hints: [String]) async throws -> [TranscriptSegment] {
+        receivedHints = hints
+        return speaker == .others ? others : mine
     }
 }
 

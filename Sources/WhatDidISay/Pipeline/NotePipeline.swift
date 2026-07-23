@@ -39,7 +39,8 @@ struct NotePipeline {
             system: input.session.systemAudioURL,
             mic: input.session.micAudioURL,
             model: input.model,
-            diarize: input.diarize
+            diarize: input.diarize,
+            hints: input.detectedParticipants
         ) { phase in
             switch phase {
             case .transcribing: onStage(.transcribing)

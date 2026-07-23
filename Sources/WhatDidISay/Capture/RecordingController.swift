@@ -44,7 +44,7 @@ final class RecordingController: ObservableObject {
     private let browserDetector = BrowserCallDetector()
     private var current: RecordingSession?
     private var currentTarget: String?
-    private var detectedParticipants = Set<String>()
+    private var participantAccumulator = ParticipantAccumulator()
     private var detectionTask: Task<Void, Never>?
 
     /// Set by AppCoordinator to present the review dialog and return the confirmed roster,
@@ -115,7 +115,7 @@ final class RecordingController: ObservableObject {
             try micCapture.start(writingTo: session.micAudioURL)
             current = session
             currentTarget = target
-            detectedParticipants = []
+            participantAccumulator = ParticipantAccumulator()
             state = .recording(since: session.startedAt)
             if let target {
                 activityMonitor.start(bundleID: target)
@@ -158,7 +158,7 @@ final class RecordingController: ObservableObject {
         detectionTask = Task { [weak self] in
             while !Task.isCancelled {
                 let found = await self?.participantDetector.detect(targetBundleID: target) ?? []
-                self?.detectedParticipants.formUnion(found)
+                self?.participantAccumulator.record(found)
                 try? await Task.sleep(for: .seconds(20))
             }
         }
@@ -175,7 +175,7 @@ final class RecordingController: ObservableObject {
             model: settings.model,
             diarize: settings.diarize,
             summaryEnabled: settings.summaryEnabled,
-            detectedParticipants: Array(detectedParticipants),
+            detectedParticipants: participantAccumulator.resolved(),
             outputFolder: settings.resolveOutputFolder()
         )
 

@@ -3,6 +3,7 @@ import ScreenCaptureKit
 import Vision
 import ApplicationServices
 import AppKit
+import NaturalLanguage
 
 struct ParticipantDetector: Sendable {
     func detect(targetBundleID: String) async -> Set<String> {
@@ -101,8 +102,34 @@ struct ParticipantDetector: Sendable {
                 guard let first = word.first, first.isUppercase else { return false }
                 return word.allSatisfy { $0.isLetter || $0 == "." || $0 == "'" || $0 == "-" }
             }
-            if plausible { result.insert(name) }
+            guard plausible, !isCommonPhrase(name) else { continue }
+            result.insert(name)
         }
         return result
+    }
+
+    private static let lexicalTags: Set<NLTag> = [
+        .noun, .verb, .adjective, .adverb, .pronoun, .determiner, .particle,
+        .preposition, .number, .conjunction, .interjection, .classifier, .idiom, .otherWord
+    ]
+
+    /// True when every token is a common dictionary word, marking UI phrases like
+    /// "New Message" or "Meeting Notes" that a person's name never is.
+    private static func isCommonPhrase(_ name: String) -> Bool {
+        let tagger = NLTagger(tagSchemes: [.nameTypeOrLexicalClass])
+        tagger.string = name
+        var tokenCount = 0
+        var lexicalCount = 0
+        tagger.enumerateTags(
+            in: name.startIndex..<name.endIndex,
+            unit: .word,
+            scheme: .nameTypeOrLexicalClass,
+            options: [.omitWhitespace, .omitPunctuation]
+        ) { tag, _ in
+            tokenCount += 1
+            if let tag, lexicalTags.contains(tag) { lexicalCount += 1 }
+            return true
+        }
+        return tokenCount > 0 && lexicalCount == tokenCount
     }
 }

@@ -92,7 +92,7 @@ final class Settings: ObservableObject {
     private let defaults = UserDefaults.standard
 
     init() {
-        self.model = defaults.string(forKey: Keys.model) ?? "base"
+        self.model = defaults.string(forKey: Keys.model) ?? "small"
         self.summaryEnabled = defaults.bool(forKey: Keys.summaryEnabled)
         self.summaryBackend = SummaryBackend(rawValue: defaults.string(forKey: Keys.summaryBackend) ?? "") ?? .local
         self.autoDetect = defaults.bool(forKey: Keys.autoDetect)

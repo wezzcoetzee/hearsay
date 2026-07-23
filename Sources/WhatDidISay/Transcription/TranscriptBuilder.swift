@@ -18,11 +18,12 @@ struct TranscriptBuilder {
         mic: URL,
         model: String,
         diarize: Bool,
+        hints: [String] = [],
         onProgress: (Phase) -> Void = { _ in }
     ) async throws -> [TranscriptSegment] {
         onProgress(.transcribing)
-        var others = try await transcriber.transcribe(url: system, speaker: .others, model: model)
-        let mine = try await transcriber.transcribe(url: mic, speaker: .me, model: model)
+        var others = try await transcriber.transcribe(url: system, speaker: .others, model: model, hints: hints)
+        let mine = try await transcriber.transcribe(url: mic, speaker: .me, model: model, hints: hints)
 
         if diarize {
             onProgress(.identifyingSpeakers)

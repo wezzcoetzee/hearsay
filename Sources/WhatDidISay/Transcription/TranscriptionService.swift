@@ -2,7 +2,7 @@ import Foundation
 import WhisperKit
 
 protocol Transcribing: Sendable {
-    func transcribe(url: URL, speaker: Speaker, model: String) async throws -> [TranscriptSegment]
+    func transcribe(url: URL, speaker: Speaker, model: String, hints: [String]) async throws -> [TranscriptSegment]
 }
 
 final class TranscriptionService: Transcribing, @unchecked Sendable {
@@ -15,11 +15,12 @@ final class TranscriptionService: Transcribing, @unchecked Sendable {
         loadedModel = model
     }
 
-    func transcribe(url: URL, speaker: Speaker, model: String) async throws -> [TranscriptSegment] {
+    func transcribe(url: URL, speaker: Speaker, model: String, hints: [String]) async throws -> [TranscriptSegment] {
         try await loadIfNeeded(model: model)
         guard let pipe else { return [] }
 
-        let results = try await pipe.transcribe(audioPath: url.path)
+        let options = Self.decodeOptions(promptTokens: promptTokens(for: hints, pipe: pipe))
+        let results = try await pipe.transcribe(audioPath: url.path, decodeOptions: options)
         return results.flatMap { result in
             result.segments.compactMap { segment -> TranscriptSegment? in
                 let text = Self.stripSpecialTokens(segment.text)
@@ -32,6 +33,30 @@ final class TranscriptionService: Transcribing, @unchecked Sendable {
                 )
             }
         }
+    }
+
+    private func promptTokens(for hints: [String], pipe: WhisperKit) -> [Int]? {
+        guard !hints.isEmpty, let tokenizer = pipe.tokenizer else { return nil }
+        let phrase = " Participants: " + hints.joined(separator: ", ") + "."
+        let tokens = tokenizer.encode(text: phrase)
+            .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
+        return tokens.isEmpty ? nil : tokens
+    }
+
+    private static func decodeOptions(promptTokens: [Int]?) -> DecodingOptions {
+        DecodingOptions(
+            task: .transcribe,
+            language: "en",
+            temperatureFallbackCount: 5,
+            usePrefillPrompt: true,
+            usePrefillCache: promptTokens == nil,
+            wordTimestamps: false,
+            promptTokens: promptTokens,
+            compressionRatioThreshold: 2.4,
+            logProbThreshold: -1.0,
+            noSpeechThreshold: 0.6,
+            chunkingStrategy: .vad
+        )
     }
 
     private static let specialTokenPattern = try! NSRegularExpression(pattern: "<\\|[^|]*\\|>")
