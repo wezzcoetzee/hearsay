@@ -32,6 +32,7 @@ struct WhatDidISayApp: App {
                         settings: coordinator.settings,
                         permissions: coordinator.permissions,
                         history: coordinator.recorder.history,
+                        levels: coordinator.recorder.levels,
                         onboarding: coordinator.onboarding)
         } label: {
             Image(nsImage: MenuBarIcon.image(recording: coordinator.recorder.isRecording))
@@ -52,6 +53,7 @@ struct MenuContent: View {
     @ObservedObject var settings: Settings
     @ObservedObject var permissions: PermissionsManager
     @ObservedObject var history: RecordingHistory
+    @ObservedObject var levels: AudioLevelMonitor
     let onboarding: OnboardingController
 
     @State private var showConsentAlert = false
@@ -121,16 +123,36 @@ struct MenuContent: View {
     }
 
     private func recordingTimer(since: Date) -> some View {
-        TimelineView(.periodic(from: since, by: 1)) { context in
-            let elapsed = Int(context.date.timeIntervalSince(since))
-            Label(String(format: "Recording  %02d:%02d", elapsed / 60, elapsed % 60),
-                  systemImage: "record.circle.fill")
-                .font(.callout.weight(.medium)).foregroundStyle(.red).monospacedDigit()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(.red.opacity(0.1),
-                            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .accessibilityLabel("Recording, \(elapsed / 60) minutes \(elapsed % 60) seconds")
+        VStack(alignment: .leading, spacing: 7) {
+            TimelineView(.periodic(from: since, by: 1)) { context in
+                let elapsed = Int(context.date.timeIntervalSince(since))
+                Label(String(format: "Recording  %02d:%02d", elapsed / 60, elapsed % 60),
+                      systemImage: "record.circle.fill")
+                    .font(.callout.weight(.medium)).foregroundStyle(.red).monospacedDigit()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("Recording, \(elapsed / 60) minutes \(elapsed % 60) seconds")
+            }
+            meterRow("Microphone", symbol: "mic.fill", level: levels.mic, isSilent: levels.micSilent)
+            meterRow("Call audio", symbol: "speaker.wave.2.fill", level: levels.system, isSilent: false)
+            if levels.micSilent {
+                Text("Nothing is reaching the microphone. Check it isn't muted and that the right input device is selected.")
+                    .font(.caption2).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(.red.opacity(0.1),
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func meterRow(_ name: String, symbol: String, level: Float, isSilent: Bool) -> some View {
+        HStack(spacing: 8) {
+            ChannelMeter(symbol: symbol, name: "\(name) level",
+                         level: level, isSilent: isSilent, segments: 14)
+            Text(isSilent ? "no sound" : name)
+                .font(.caption2)
+                .foregroundStyle(isSilent ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+            Spacer(minLength: 0)
         }
     }
 

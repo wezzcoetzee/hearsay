@@ -3,8 +3,13 @@ import AVFoundation
 
 final class MicCapture {
     private let engine = AVAudioEngine()
+    private let levels: AudioLevelSink
     private var file: AVAudioFile?
     private var isRunning = false
+
+    init(levels: AudioLevelSink) {
+        self.levels = levels
+    }
 
     func start(writingTo url: URL) throws {
         let input = engine.inputNode
@@ -14,7 +19,9 @@ final class MicCapture {
         self.file = file
 
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
-            try? self?.file?.write(from: buffer)
+            guard let self else { return }
+            try? self.file?.write(from: buffer)
+            self.levels.submitMic(AudioLevel.level(of: buffer))
         }
 
         engine.prepare()

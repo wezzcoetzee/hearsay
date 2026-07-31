@@ -10,14 +10,16 @@ final class AppCoordinator: ObservableObject {
     let confirmation = ConfirmationController()
     let onboarding: OnboardingController
     let participantReview = ParticipantReviewController()
-    let controlPanel = RecordingControlPanelController()
+    let controlPanel: RecordingControlPanelController
 
     private var bag = Set<AnyCancellable>()
 
     init() {
         let settings = Settings()
         self.settings = settings
-        self.recorder = RecordingController(settings: settings, permissions: permissions)
+        let recorder = RecordingController(settings: settings, permissions: permissions)
+        self.recorder = recorder
+        self.controlPanel = RecordingControlPanelController(levels: recorder.levels)
         self.onboarding = OnboardingController(permissions: permissions, settings: settings)
 
         let review = participantReview

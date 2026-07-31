@@ -13,8 +13,14 @@ final class RecordingControlPanelController: ObservableObject {
         didSet { reconcile() }
     }
 
+    let levels: AudioLevelMonitor
+
     private var recordingSince: Date?
     private var panel: NSPanel?
+
+    init(levels: AudioLevelMonitor) {
+        self.levels = levels
+    }
 
     func update(for state: RecordingController.State) {
         if case .recording(let since) = state {
@@ -43,7 +49,7 @@ final class RecordingControlPanelController: ObservableObject {
 
         let view = RecordingControlPanelView(controller: self)
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: expandedSize.width, height: expandedSize.height),
+            contentRect: NSRect(x: 0, y: 0, width: Self.expandedSize.width, height: Self.expandedSize.height),
             styleMask: [.nonactivatingPanel, .fullSizeContentView, .borderless],
             backing: .buffered,
             defer: false
@@ -81,7 +87,7 @@ final class RecordingControlPanelController: ObservableObject {
     }
 
     private func resize(_ panel: NSPanel) {
-        let target = isMinimized ? minimizedSize : expandedSize
+        let target = isMinimized ? Self.minimizedSize : Self.expandedSize
         let topLeft = NSPoint(x: panel.frame.minX, y: panel.frame.maxY)
         var frame = panel.frame
         frame.size = target
@@ -89,12 +95,18 @@ final class RecordingControlPanelController: ObservableObject {
         panel.setFrame(frame, display: true, animate: true)
     }
 
-    private let expandedSize = NSSize(width: 240, height: 64)
-    private let minimizedSize = NSSize(width: 132, height: 40)
+    static let expandedSize = NSSize(width: 252, height: 92)
+    static let minimizedSize = NSSize(width: 160, height: 40)
 }
 
 struct RecordingControlPanelView: View {
     @ObservedObject var controller: RecordingControlPanelController
+    @ObservedObject var levels: AudioLevelMonitor
+
+    init(controller: RecordingControlPanelController) {
+        self.controller = controller
+        self.levels = controller.levels
+    }
 
     var body: some View {
         Group {
@@ -112,35 +124,50 @@ struct RecordingControlPanelView: View {
     }
 
     private var expanded: some View {
-        HStack(spacing: 10) {
-            RecordingDot()
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Recording").font(.caption).foregroundStyle(.secondary)
-                timer.font(.title3).monospacedDigit().foregroundStyle(.primary)
-            }
-            Spacer(minLength: 4)
-            Button {
-                controller.toggleMinimized()
-            } label: {
-                Image(systemName: "minus")
-            }
-            .buttonStyle(.borderless)
-            .help("Minimize")
-            .accessibilityLabel("Minimize control panel")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                RecordingDot(level: levels.mic)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(levels.micSilent ? "No mic input" : "Recording")
+                        .font(.caption)
+                        .foregroundStyle(levels.micSilent ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+                    timer.font(.title3).monospacedDigit().foregroundStyle(.primary)
+                }
+                Spacer(minLength: 4)
+                Button {
+                    controller.toggleMinimized()
+                } label: {
+                    Image(systemName: "minus")
+                }
+                .buttonStyle(.borderless)
+                .help("Minimize")
+                .accessibilityLabel("Minimize control panel")
 
-            Button {
-                controller.onStop?()
-            } label: {
-                Image(systemName: "stop.fill")
+                Button {
+                    controller.onStop?()
+                } label: {
+                    Image(systemName: "stop.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .help("Stop recording")
+                .accessibilityLabel("Stop recording")
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
-            .help("Stop recording")
-            .accessibilityLabel("Stop recording")
+
+            HStack(spacing: 14) {
+                ChannelMeter(symbol: "mic.fill", name: "Microphone level",
+                             level: levels.mic, isSilent: levels.micSilent)
+                    .help(levels.micSilent ? "No sound from your microphone" : "Microphone level")
+                ChannelMeter(symbol: "speaker.wave.2.fill", name: "Call audio level",
+                             level: levels.system, isSilent: false)
+                    .help("Call audio level")
+                Spacer(minLength: 0)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .frame(width: 240, height: 64)
+        .frame(width: RecordingControlPanelController.expandedSize.width,
+               height: RecordingControlPanelController.expandedSize.height)
     }
 
     private var minimized: some View {
@@ -148,13 +175,15 @@ struct RecordingControlPanelView: View {
             controller.toggleMinimized()
         } label: {
             HStack(spacing: 8) {
-                RecordingDot()
+                RecordingDot(level: levels.mic)
                 timer.font(.callout).monospacedDigit().foregroundStyle(.primary)
+                LevelMeter(level: max(levels.mic, levels.system), segments: 5, height: 10)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.up").font(.caption2).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12)
-            .frame(width: 132, height: 40)
+            .frame(width: RecordingControlPanelController.minimizedSize.width,
+                   height: RecordingControlPanelController.minimizedSize.height)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -177,12 +206,16 @@ struct RecordingControlPanelView: View {
 }
 
 private struct RecordingDot: View {
+    let level: Float
+
     @State private var pulsing = false
 
     var body: some View {
         Circle()
             .fill(.red)
             .frame(width: 10, height: 10)
+            .scaleEffect(1 + CGFloat(level) * 0.4)
+            .animation(.linear(duration: 0.08), value: level)
             .opacity(pulsing ? 0.35 : 1)
             .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulsing)
             .onAppear { pulsing = true }

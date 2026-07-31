@@ -9,6 +9,12 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
     private var sessionStarted = false
     private var finalizeResumed = false
     private let queue = DispatchQueue(label: "com.whatdidisay.systemaudio")
+    private let levels: AudioLevelSink
+
+    init(levels: AudioLevelSink) {
+        self.levels = levels
+        super.init()
+    }
 
     func start(writingTo url: URL, targetBundleID: String?) async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
@@ -82,9 +88,10 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .audio,
-              let writer, let input,
-              CMSampleBufferDataIsReady(sampleBuffer) else { return }
+        guard type == .audio, CMSampleBufferDataIsReady(sampleBuffer) else { return }
+        levels.submitSystem(AudioLevel.level(of: sampleBuffer))
+
+        guard let writer, let input else { return }
 
         if writer.status == .unknown {
             let start = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)

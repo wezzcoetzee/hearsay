@@ -34,9 +34,10 @@ final class RecordingController: ObservableObject {
     let settings: Settings
     let permissions: PermissionsManager
     let history = RecordingHistory()
+    let levels = AudioLevelMonitor()
 
-    private let systemCapture = SystemAudioCapture()
-    private let micCapture = MicCapture()
+    private let systemCapture: SystemAudioCapture
+    private let micCapture: MicCapture
     private let transcriber = TranscriptionService()
     private let diarizer = Diarizer()
     private let activityMonitor = CallActivityMonitor()
@@ -54,6 +55,8 @@ final class RecordingController: ObservableObject {
     init(settings: Settings, permissions: PermissionsManager) {
         self.settings = settings
         self.permissions = permissions
+        self.systemCapture = SystemAudioCapture(levels: levels.sink)
+        self.micCapture = MicCapture(levels: levels.sink)
         activityMonitor.onEnded = { [weak self] in
             Task { await self?.stop() }
         }
@@ -116,6 +119,7 @@ final class RecordingController: ObservableObject {
             current = session
             currentTarget = target
             participantAccumulator = ParticipantAccumulator()
+            levels.start()
             state = .recording(since: session.startedAt)
             if let target {
                 activityMonitor.start(bundleID: target)
@@ -142,6 +146,7 @@ final class RecordingController: ObservableObject {
         detectionTask?.cancel()
         detectionTask = nil
         activityMonitor.stop()
+        levels.stop()
         micCapture.stop()
         await systemCapture.stop()
         session.finishedAt = Date()
@@ -237,6 +242,7 @@ final class RecordingController: ObservableObject {
         detectionTask?.cancel()
         detectionTask = nil
         activityMonitor.stop()
+        levels.stop()
         await systemCapture.stop()
         micCapture.stop()
         current = nil
