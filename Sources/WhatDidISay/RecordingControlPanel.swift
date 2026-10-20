@@ -158,9 +158,11 @@ struct RecordingControlPanelView: View {
                 ChannelMeter(symbol: "mic.fill", name: "Microphone level",
                              level: levels.mic, isSilent: levels.micSilent)
                     .help(levels.micSilent ? "No sound from your microphone" : "Microphone level")
-                ChannelMeter(symbol: "speaker.wave.2.fill", name: "Call audio level",
-                             level: levels.system, isSilent: false)
-                    .help("Call audio level")
+                if levels.tracksSystemAudio {
+                    ChannelMeter(symbol: "speaker.wave.2.fill", name: "Call audio level",
+                                 level: levels.system, isSilent: false)
+                        .help("Call audio level")
+                }
                 Spacer(minLength: 0)
             }
         }
@@ -196,8 +198,8 @@ struct RecordingControlPanelView: View {
         if let since = controller.since {
             TimelineView(.periodic(from: since, by: 1)) { context in
                 let elapsed = Int(context.date.timeIntervalSince(since))
-                Text(String(format: "%02d:%02d", elapsed / 60, elapsed % 60))
-                    .accessibilityLabel("Recording, \(elapsed / 60) minutes \(elapsed % 60) seconds")
+                Text(ElapsedTime.clock(elapsed))
+                    .accessibilityLabel("Recording, \(ElapsedTime.spoken(elapsed))")
             }
         } else {
             Text("00:00").monospacedDigit()
@@ -205,20 +207,19 @@ struct RecordingControlPanelView: View {
     }
 }
 
+/// Grows with the mic level. Deliberately no idle pulse: a forever-repeating animation
+/// repaints every frame for the whole call, and the live timer already shows it's running.
 private struct RecordingDot: View {
     let level: Float
 
-    @State private var pulsing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Circle()
             .fill(.red)
             .frame(width: 10, height: 10)
-            .scaleEffect(1 + CGFloat(level) * 0.4)
+            .scaleEffect(reduceMotion ? 1 : 1 + CGFloat(level) * 0.4)
             .animation(.linear(duration: 0.08), value: level)
-            .opacity(pulsing ? 0.35 : 1)
-            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulsing)
-            .onAppear { pulsing = true }
             .accessibilityHidden(true)
     }
 }

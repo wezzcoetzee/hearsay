@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 enum Keychain {
-    private static let service = "com.whatdidisay.keys"
+    private static let service = "com.wcoetzee.whatdidisay.keys"
 
     static func set(_ value: String, for account: String) {
         let query: [String: Any] = [

@@ -31,6 +31,11 @@ final class PermissionsManager: ObservableObject {
 
     var allGranted: Bool { microphone.isGranted && screenRecording.isGranted }
 
+    /// Mic-only sources don't need Screen Recording, so they shouldn't be blocked on it.
+    func isGranted(for source: RecordingSource) -> Bool {
+        microphone.isGranted && (!source.usesSystemAudio || screenRecording.isGranted)
+    }
+
     func requestAll() async {
         await requestMicrophone()
         await requestScreenRecording()
@@ -39,6 +44,22 @@ final class PermissionsManager: ObservableObject {
     func refresh() {
         microphone = Self.microphoneStatus()
         screenRecording = CGPreflightScreenCaptureAccess() ? .granted : .denied
+    }
+
+    /// Asks macOS first, because an app that has never asked isn't listed in System
+    /// Settings, so sending the user there would show them nothing to switch on.
+    func request(_ pane: Pane) async {
+        switch pane {
+        case .microphone:
+            if microphone == .unknown {
+                await requestMicrophone()
+            } else {
+                openSettings(.microphone)
+            }
+        case .screenRecording:
+            await requestScreenRecording()
+            if !screenRecording.isGranted { openSettings(.screenRecording) }
+        }
     }
 
     func openSettings(_ pane: Pane) {

@@ -36,6 +36,14 @@ final class ConfirmationController: ObservableObject {
     func confirm() { finish(start: true) }
     func dismiss() { finish(start: false) }
 
+    /// Takes the prompt down when the call it's offering to record has already ended,
+    /// so "Start Recording" can't begin capturing a call that's over.
+    func withdraw(ifEndedBy bundleID: String?) {
+        guard let pending else { return }
+        if let bundleID, !pending.bundleIDs.contains(bundleID) { return }
+        dismiss()
+    }
+
     func turnOffAutoDetect() {
         onTurnOffAutoDetect?()
         dismiss()

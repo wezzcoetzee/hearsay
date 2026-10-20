@@ -23,13 +23,29 @@ final class RecordingController: ObservableObject {
     struct SaveConfirmation: Equatable {
         let noteURL: URL?
         let folderName: String
+        /// Something the user asked for that didn't happen, e.g. keeping the audio.
+        let warning: String?
     }
 
     @Published private(set) var state: State = .idle
-    @Published private(set) var lastSession: RecordingSession?
     @Published private(set) var lastSave: SaveConfirmation?
+    /// A finished recording that hasn't become a note yet. While processing it's the
+    /// call in flight; after a failure or cancel it's what "Try Again" re-processes and
+    /// "Discard" deletes.
+    @Published private(set) var unsaved: RecordingSession?
+    /// What the latest start attempt recorded, so retrying a failed start repeats it.
+    @Published private(set) var lastSource: RecordingSource = .manual
+    /// True when the latest failure was a start, so the menu offers to retry the start
+    /// rather than re-process an older unsaved call.
+    @Published private(set) var failedToStart = false
     private var saveClearTask: Task<Void, Never>?
     private var processingTask: Task<Void, Never>?
+    /// A cancelled run still unwinding (Whisper only notices cancellation between
+    /// tracks). Awaited before the same files are processed or deleted again.
+    private var unwinding: Task<Void, Never>?
+    /// Covers the awaits inside `start`, where `state` is still idle and a second
+    /// start (a double click, or auto-detect firing) would race for the same devices.
+    private var isStarting = false
 
     let settings: Settings
     let permissions: PermissionsManager
@@ -50,7 +66,7 @@ final class RecordingController: ObservableObject {
 
     /// Set by AppCoordinator to present the review dialog and return the confirmed roster,
     /// or `nil` when the user chooses to delete the call.
-    var confirmParticipants: (([String]) async -> [String]?)?
+    var confirmRoster: ((RosterReview) async -> ReviewedRoster?)?
 
     init(settings: Settings, permissions: PermissionsManager) {
         self.settings = settings
@@ -78,7 +94,7 @@ final class RecordingController: ObservableObject {
     var isBusy: Bool {
         switch state {
         case .recording, .finishing, .processing: return true
-        case .idle, .failed: return false
+        case .idle, .failed: return isStarting
         }
     }
 
@@ -87,22 +103,29 @@ final class RecordingController: ObservableObject {
         return false
     }
 
-    func toggle() async {
+    func toggle(source: RecordingSource = .manual) async {
         if isRecording {
             await stop()
         } else {
-            await start(source: .manual)
+            await start(source: source)
         }
     }
 
     func start(source: RecordingSource) async {
         guard !isBusy else { return }
+        isStarting = true
+        defer { isStarting = false }
+        lastSource = source
+        // Every early return below is a failed start; cleared once capture is running.
+        failedToStart = true
 
         saveClearTask?.cancel()
         lastSave = nil
         permissions.refresh()
-        guard permissions.allGranted else {
-            state = .failed("Grant Microphone and Screen Recording, then relaunch.")
+        guard permissions.isGranted(for: source) else {
+            state = .failed(source.usesSystemAudio
+                            ? "Grant Microphone and Screen Recording, then relaunch."
+                            : "Grant Microphone, then relaunch.")
             return
         }
         guard settings.hasOutputFolder else {
@@ -114,12 +137,18 @@ final class RecordingController: ObservableObject {
         let target = bundleID(for: source)
         do {
             try session.prepareDirectory()
-            try await systemCapture.start(writingTo: session.systemAudioURL, targetBundleID: target)
+            if let systemAudioURL = session.systemAudioURL {
+                try await systemCapture.start(writingTo: systemAudioURL, targetBundleID: target)
+            }
             try micCapture.start(writingTo: session.micAudioURL)
+            // A new call supersedes an earlier one that failed to save. Its audio stays
+            // in Application Support rather than being deleted behind the user's back.
+            unsaved = nil
+            failedToStart = false
             current = session
             currentTarget = target
             participantAccumulator = ParticipantAccumulator()
-            levels.start()
+            levels.start(systemAudio: source.usesSystemAudio)
             state = .recording(since: session.startedAt)
             if let target {
                 activityMonitor.start(bundleID: target)
@@ -132,11 +161,36 @@ final class RecordingController: ObservableObject {
         }
     }
 
+    /// Stops processing but keeps the audio, so the call can still be retried or discarded.
     func cancelProcessing() {
         guard isProcessing else { return }
         processingTask?.cancel()
+        // A retry may still be waiting on an earlier run, with no task of its own yet.
+        unwinding = processingTask ?? unwinding
         processingTask = nil
+        state = .failed("Processing stopped. The audio is still on your Mac.")
+    }
+
+    /// Whether the failure on screen can be fixed by re-processing a kept recording.
+    var canRetryProcessing: Bool { unsaved != nil && !failedToStart }
+
+    func retryProcessing() async {
+        guard let session = unsaved, !isBusy else { return }
+        state = .processing(.transcribing)
+        await process(session)
+    }
+
+    func discardUnsaved() async {
+        guard let session = unsaved, !isBusy else { return }
+        unsaved = nil
         state = .idle
+        await finishUnwinding()
+        session.deleteRecording()
+    }
+
+    private func finishUnwinding() async {
+        await unwinding?.value
+        unwinding = nil
     }
 
     func stop() async {
@@ -145,18 +199,38 @@ final class RecordingController: ObservableObject {
         state = .finishing
         detectionTask?.cancel()
         detectionTask = nil
+        session.detectedParticipants = participantAccumulator.resolved()
         activityMonitor.stop()
         levels.stop()
         micCapture.stop()
         await systemCapture.stop()
         session.finishedAt = Date()
+        await process(session)
+    }
+
+    /// Auto-detection saw a call end, either because the mic went quiet (`nil`) or an
+    /// app quit. Only a recording of that call stops: manual and in-person recordings
+    /// have no target app, so quitting Slack or a browser leaves them running.
+    func endDetectedCall(app bundleID: String?) async {
+        guard current != nil, let target = currentTarget else { return }
+        guard bundleID == nil || bundleID == target else { return }
+        await stop()
+    }
+
+    private func process(_ session: RecordingSession) async {
+        unsaved = session
+        failedToStart = false
+        // The transcriber isn't safe to run twice at once, and a retry reads the same files.
+        await finishUnwinding()
+        guard isProcessing || state == .finishing else { return }  // cancelled while waiting
         let task = Task { [weak self] in
             guard let self else { return }
             await self.transcribeAndWrite(session)
         }
         processingTask = task
         await task.value
-        processingTask = nil
+        // A cancel followed by a retry installs a newer task; leave that one alone.
+        if processingTask == task { processingTask = nil }
     }
 
     private func startParticipantDetection(target: String) {
@@ -173,66 +247,76 @@ final class RecordingController: ObservableObject {
         let pipeline = NotePipeline(
             transcript: TranscriptBuilder(transcriber: transcriber, diarizer: diarizer),
             summarize: { [settings] segments in await Summary.of(segments: segments, settings: settings) },
-            confirmParticipants: confirmParticipants
+            confirmRoster: confirmRoster
         )
         let input = NotePipeline.Input(
             session: session,
             model: settings.model,
-            diarize: settings.diarize,
+            // An in-person meeting has no second track, so diarization is the only thing
+            // that can tell the room's voices apart — always run it there.
+            diarize: settings.diarize || !session.source.usesSystemAudio,
             summaryEnabled: settings.summaryEnabled,
-            detectedParticipants: participantAccumulator.resolved(),
+            detectedParticipants: session.detectedParticipants,
             outputFolder: settings.resolveOutputFolder()
         )
 
+        // Once cancelled, this task may still be unwinding while the user has moved on
+        // (retried, or started another call), so it must not touch shared state.
         do {
             let outcome = try await pipeline.run(input) { [weak self] stage in
+                guard !Task.isCancelled else { return }
                 self?.state = .processing(stage.recordingStage)
             }
+            guard !Task.isCancelled else { return }
             switch outcome {
             case .saved(let noteURL, let folder):
-                lastSession = session
+                unsaved = nil
                 history.add(session)
-                archiveOrDeleteAudio(for: session)
-                confirmSave(folder: folder, noteURL: noteURL)
+                let warning = archiveOrDeleteAudio(for: session)
+                confirmSave(folder: folder, noteURL: noteURL, warning: warning)
                 state = .idle
             case .deleted:
+                unsaved = nil
                 session.deleteRecording()
                 state = .idle
             case .folderMissing:
-                lastSession = session
-                history.add(session)
-                state = .failed("Couldn't save the note: the notes folder is missing. Pick one, then save this call again.")
+                settings.revalidateFolders()
+                state = .failed("The notes folder is missing. Choose one, then try again.")
             }
-        } catch is CancellationError {
-            return
         } catch {
-            if Task.isCancelled { return }
-            lastSession = session
+            guard !Task.isCancelled else { return }
             NSLog("Processing failed: \(error)")
-            state = .failed("Couldn't finish processing this recording. The audio is still on your Mac. Try again.")
+            state = .failed("Couldn't finish processing this recording. The audio is still on your Mac.")
         }
     }
 
     /// Keeps the recording in Application Support if archiving fails, so audio
-    /// the user asked to keep is never lost.
-    private func archiveOrDeleteAudio(for session: RecordingSession) {
-        guard settings.keepAudio, let folder = settings.resolveAudioFolder() else {
+    /// the user asked to keep is never lost. Returns a warning when that happens.
+    private func archiveOrDeleteAudio(for session: RecordingSession) -> String? {
+        guard settings.keepAudio else {
             session.deleteRecording()
-            return
+            return nil
+        }
+        guard let folder = settings.resolveAudioFolder() else {
+            return "No audio folder is set, so the audio is kept in Application Support. Choose one in Settings."
         }
         do {
             try AudioArchiver.archive(session, to: folder, format: settings.audioFilenameFormat)
             session.deleteRecording()
+            return nil
         } catch {
             NSLog("Audio archive failed: \(error)")
+            return "Couldn't copy the audio to \(folder.lastPathComponent). It's kept in Application Support."
         }
     }
 
-    private func confirmSave(folder: URL, noteURL: URL?) {
-        lastSave = SaveConfirmation(noteURL: noteURL, folderName: folder.lastPathComponent)
+    private func confirmSave(folder: URL, noteURL: URL?, warning: String?) {
+        lastSave = SaveConfirmation(noteURL: noteURL, folderName: folder.lastPathComponent, warning: warning)
         saveClearTask?.cancel()
+        // A warning is worth reading, so it lingers longer than a plain confirmation.
+        let linger: Duration = warning == nil ? .seconds(8) : .seconds(30)
         saveClearTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(8))
+            try? await Task.sleep(for: linger)
             if Task.isCancelled { return }
             self?.lastSave = nil
         }

@@ -13,7 +13,7 @@ import Darwin
 final class CallActivityMonitor {
     var onEnded: (() -> Void)?
 
-    private let queue = DispatchQueue(label: "com.whatdidisay.callactivity")
+    private let queue = DispatchQueue(label: "com.wcoetzee.whatdidisay.callactivity")
     private var processObjects: [AudioObjectID] = []
     private var listener: AudioObjectPropertyListenerBlock?
     private var endTask: Task<Void, Never>?

@@ -5,21 +5,27 @@ import ApplicationServices
 @MainActor
 final class ParticipantReviewController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
-    private var continuation: CheckedContinuation<[String]?, Never>?
-    private var fallback: [String] = []
+    private var continuation: CheckedContinuation<ReviewedRoster?, Never>?
+    private var fallback = ReviewedRoster(voices: [], others: [])
 
     /// Returns the confirmed roster, or `nil` when the user chooses to delete the call.
-    func review(candidates: [String]) async -> [String]? {
-        await withCheckedContinuation { continuation in
-            self.continuation = continuation
-            self.fallback = candidates.isEmpty ? ["Me"] : candidates
-            present(candidates: candidates)
+    /// Cancelling the calling task closes the dialog and also returns `nil`, so callers
+    /// must check for cancellation before treating `nil` as a delete.
+    func review(_ request: RosterReview) async -> ReviewedRoster? {
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+                self.fallback = request.unreviewed
+                present(request)
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.finish(with: nil) }
         }
     }
 
-    private func present(candidates: [String]) {
-        let view = ParticipantReviewView(initial: candidates) { [weak self] result in
-            self?.finish(with: result)
+    private func present(_ request: RosterReview) {
+        let view = ParticipantReviewView(request: request) { [weak self] roster in
+            self?.finish(with: roster)
         } onDelete: { [weak self] in
             self?.finish(with: nil)
         }
@@ -45,7 +51,7 @@ final class ParticipantReviewController: NSObject, NSWindowDelegate {
         finish(with: fallback)
     }
 
-    private func finish(with result: [String]?) {
+    private func finish(with result: ReviewedRoster?) {
         guard let continuation else { return }
         self.continuation = nil
         window?.delegate = nil
@@ -55,15 +61,28 @@ final class ParticipantReviewController: NSObject, NSWindowDelegate {
     }
 }
 
+/// One line per voice heard, plus anyone who was there without speaking. Naming a
+/// voice relabels it throughout the transcript; leaving it blank keeps the label.
 struct ParticipantReviewView: View {
+    /// Rows are removable, so they need a stable identity; indexing a shrinking array
+    /// from a `ForEach` binding crashes when the last row goes.
+    private struct Attendee: Identifiable {
+        let id = UUID()
+        var name: String
+    }
+
+    private let voices: [VoiceCandidate]
     @State private var names: [String]
+    @State private var others: [Attendee]
     @State private var newName = ""
     @State private var confirmingDelete = false
-    private let onDone: ([String]) -> Void
+    private let onDone: (ReviewedRoster) -> Void
     private let onDelete: () -> Void
 
-    init(initial: [String], onDone: @escaping ([String]) -> Void, onDelete: @escaping () -> Void) {
-        _names = State(initialValue: initial.isEmpty ? ["Me"] : initial)
+    init(request: RosterReview, onDone: @escaping (ReviewedRoster) -> Void, onDelete: @escaping () -> Void) {
+        self.voices = request.voices
+        _names = State(initialValue: request.voices.map(\.suggestion))
+        _others = State(initialValue: request.others.map { Attendee(name: $0) })
         self.onDone = onDone
         self.onDelete = onDelete
     }
@@ -71,9 +90,9 @@ struct ParticipantReviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Who was on the call?")
+                Text("Who was talking?")
                     .font(.headline)
-                Text("We guessed from the on-screen roster. Correct anything that's wrong before we save the note.")
+                Text("Voices you don't name keep their label in the note.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -83,17 +102,37 @@ struct ParticipantReviewView: View {
 
             ScrollView {
                 VStack(spacing: 6) {
-                    ForEach(names.indices, id: \.self) { index in
-                        HStack {
+                    ForEach(voices.indices, id: \.self) { index in
+                        HStack(spacing: 8) {
+                            Text(voices[index].label)
+                                .font(.caption).foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .frame(width: 76, alignment: .leading)
+                                .help(voices[index].sample)
+                                .accessibilityHidden(true)
+                            // Labelled on the field itself: combining the row would hide
+                            // the text field from VoiceOver.
                             TextField("Name", text: $names[index])
                                 .textFieldStyle(.roundedBorder)
-                            Button {
-                                names.remove(at: index)
-                            } label: {
-                                Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+                                .accessibilityLabel("Name for \(voices[index].label)")
+                                .accessibilityHint("Said: \(voices[index].sample)")
+                        }
+                    }
+
+                    if !others.isEmpty {
+                        Divider().padding(.vertical, 4)
+                        ForEach($others) { $attendee in
+                            HStack(spacing: 8) {
+                                TextField("Name", text: $attendee.name)
+                                    .textFieldStyle(.roundedBorder)
+                                Button {
+                                    others.removeAll { $0.id == attendee.id }
+                                } label: {
+                                    Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.borderless)
+                                .accessibilityLabel(attendee.name.isEmpty ? "Remove participant" : "Remove \(attendee.name)")
                             }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel(names[index].isEmpty ? "Remove participant" : "Remove \(names[index])")
                         }
                     }
                 }
@@ -102,7 +141,7 @@ struct ParticipantReviewView: View {
             }
 
             HStack {
-                TextField("Add participant", text: $newName)
+                TextField("Someone who didn't speak", text: $newName)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(addName)
                 Button("Add", action: addName)
@@ -133,28 +172,23 @@ struct ParticipantReviewView: View {
             Divider()
 
             HStack {
-                Button("Delete Call", role: .destructive) {
+                Button("Delete Recording", role: .destructive) {
                     confirmingDelete = true
                 }
                 .confirmationDialog(
-                    "Delete this call?",
+                    "Delete this recording?",
                     isPresented: $confirmingDelete,
                     titleVisibility: .visible
                 ) {
-                    Button("Delete Call", role: .destructive, action: onDelete)
+                    Button("Delete Recording", role: .destructive, action: onDelete)
                     Button("Cancel", role: .cancel) {}
                 } message: {
                     Text("The recording is discarded and no note is saved. This can't be undone.")
                 }
                 Spacer()
-                Button("Save") {
-                    let cleaned = names
-                        .map { $0.trimmingCharacters(in: .whitespaces) }
-                        .filter { !$0.isEmpty }
-                    onDone(cleaned.isEmpty ? ["Me"] : cleaned)
-                }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
+                Button("Save", action: save)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
             }
             .padding(20)
         }
@@ -164,7 +198,17 @@ struct ParticipantReviewView: View {
     private func addName() {
         let trimmed = newName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
-        names.append(trimmed)
+        others.append(Attendee(name: trimmed))
         newName = ""
+    }
+
+    private func save() {
+        let reviewed = zip(voices, names).map {
+            ReviewedVoice(label: $0.label, name: $1.trimmingCharacters(in: .whitespaces))
+        }
+        let present = others
+            .map { $0.name.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        onDone(ReviewedRoster(voices: reviewed, others: present))
     }
 }

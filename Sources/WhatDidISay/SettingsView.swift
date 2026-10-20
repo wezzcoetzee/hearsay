@@ -72,9 +72,7 @@ struct SettingsView: View {
                             .controlSize(.small)
                         helper("Tokens: {date} {time} {source} {track}")
                     }
-                    helper(settings.keepAudio
-                           ? "After a call is transcribed, its audio files are saved to this folder. Without a folder, audio is still deleted."
-                           : "Audio is deleted once the note is saved. Turn this on to keep the recordings.")
+                    helper(settings.keepAudioExplanation)
                 }
 
                 section("Summary") {
@@ -114,9 +112,11 @@ struct SettingsView: View {
         .frame(width: 360, height: 480)
         .navigationTitle("Settings")
         .onChange(of: settings.keepAudio) { _, isOn in
-            if isOn && settings.audioFolderPath == nil {
-                settings.chooseAudioFolder()
-            }
+            guard isOn, settings.audioFolderPath == nil else { return }
+            settings.chooseAudioFolder()
+            // Cancelling the picker would leave "keep audio" on while audio is still
+            // deleted, so take the switch back off.
+            if settings.audioFolderPath == nil { settings.keepAudio = false }
         }
         .onChange(of: settings.summaryBackend) { _, newValue in
             if newValue == .cloud && !settings.hasAcknowledgedCloud {

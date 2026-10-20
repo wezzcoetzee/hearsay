@@ -45,28 +45,22 @@ final class RecordingHistory: ObservableObject {
         )
         entries.insert(entry, at: 0)
         if entries.count > maxEntries {
-            let dropCount = entries.count - maxEntries
-            entries.suffix(dropCount).forEach(deleteRecording)
-            entries.removeLast(dropCount)
+            entries.removeLast(entries.count - maxEntries)
         }
         save()
     }
 
+    // History is only a list. Removing an entry never deletes files: by the time a
+    // call is listed its audio is gone, unless archiving failed, and then it's audio
+    // the user asked to keep.
     func remove(_ entry: HistoryEntry) {
-        deleteRecording(entry)
         entries.removeAll { $0.id == entry.id }
         save()
     }
 
     func clear() {
-        entries.forEach(deleteRecording)
         entries.removeAll()
         save()
-    }
-
-    private func deleteRecording(_ entry: HistoryEntry) {
-        guard let url = entry.recordingURL else { return }
-        try? FileManager.default.removeItem(at: url)
     }
 
     private func load() {

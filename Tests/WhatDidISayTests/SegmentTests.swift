@@ -8,6 +8,11 @@ import Testing
         #expect(TranscriptSegment(start: 3599, end: 3600, text: "", speaker: .me).timestamp == "59:59")
     }
 
+    @Test func timestampGrowsAnHourFieldOnLongCalls() {
+        #expect(TranscriptSegment(start: 3600, end: 3601, text: "", speaker: .me).timestamp == "1:00:00")
+        #expect(TranscriptSegment(start: 3912, end: 3913, text: "", speaker: .me).timestamp == "1:05:12")
+    }
+
     @Test func timestampRoundsToNearestSecond() {
         #expect(TranscriptSegment(start: 59.6, end: 60, text: "", speaker: .me).timestamp == "01:00")
     }

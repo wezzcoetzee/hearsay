@@ -1,16 +1,5 @@
-# Swift Package Manager
 .build/
-.swiftpm/
-*.xcodeproj
-*.xcworkspace
-
-# Build output
 build/
 dist/
-
-# Xcode
-DerivedData/
-xcuserdata/
-
-# macOS
 .DS_Store
+.swiftpm/
