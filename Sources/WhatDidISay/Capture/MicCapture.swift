@@ -25,7 +25,14 @@ final class MicCapture {
         }
 
         engine.prepare()
-        try engine.start()
+        do {
+            try engine.start()
+        } catch {
+            // A tap left behind makes the next installTap raise and crash the app.
+            input.removeTap(onBus: 0)
+            self.file = nil
+            throw error
+        }
         isRunning = true
     }
 

@@ -56,6 +56,26 @@ import Testing
         #expect(transcriber.receivedHints == ["Ada Lovelace"])
     }
 
+    @Test func micAloneLeavesNobodyLabelledAsMe() async throws {
+        let transcriber = FakeTranscriber(others: [makeSegment(0, "who said this", .others)],
+                                          mine: [makeSegment(0, "who said this", .numbered(0))])
+        let out = try await builder(transcriber).build(system: nil, mic: mic, model: "base", diarize: false)
+        #expect(out.map(\.speaker) == [Speaker.numbered(0)])
+    }
+
+    @Test func micAloneSplitsTheRoomByDiarization() async throws {
+        let transcriber = FakeTranscriber(others: [], mine: [
+            makeSegment(0, "morning", .numbered(0)),
+            makeSegment(10, "morning back", .numbered(0))
+        ])
+        let diarizer = FakeDiarizer(spans: [
+            SpeakerSpan(start: 0, end: 2, speakerId: 0),
+            SpeakerSpan(start: 10, end: 12, speakerId: 1)
+        ])
+        let out = try await builder(transcriber, diarizer).build(system: nil, mic: mic, model: "base", diarize: true)
+        #expect(out.map(\.speaker) == [Speaker.numbered(0), Speaker.numbered(1)])
+    }
+
     @Test func skipsIdentifyingPhaseWhenDiarizeDisabled() async throws {
         var phases: [TranscriptBuilder.Phase] = []
         let transcriber = FakeTranscriber(others: [], mine: [])

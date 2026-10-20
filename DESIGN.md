@@ -1,5 +1,5 @@
 ---
-name: what-did-i-say
+name: What Did I Say
 description: A macOS menu-bar recorder that transcribes calls on-device and files notes to your vault, dressed entirely in system-native materials.
 colors:
   accent-tint: "#007AFF"
@@ -92,7 +92,7 @@ components:
     typography: "{typography.label}"
 ---
 
-# Design System: what-did-i-say
+# Design System: What Did I Say
 
 ## 1. Overview
 

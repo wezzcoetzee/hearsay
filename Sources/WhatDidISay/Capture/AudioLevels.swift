@@ -148,6 +148,9 @@ final class AudioLevelMonitor: ObservableObject {
     @Published private(set) var system: Float = 0
     @Published private(set) var micSilent = false
     @Published private(set) var systemSilent = false
+    /// False while recording a source with no system track, so the UI can drop the
+    /// meter rather than show one that will never move.
+    @Published private(set) var tracksSystemAudio = true
 
     let sink = AudioLevelSink()
 
@@ -159,8 +162,9 @@ final class AudioLevelMonitor: ObservableObject {
     private var systemSilence = SilenceTracker()
     private var pump: Task<Void, Never>?
 
-    func start() {
+    func start(systemAudio: Bool = true) {
         stop()
+        tracksSystemAudio = systemAudio
         sink.reset()
         micSilence.reset()
         systemSilence.reset()
@@ -181,6 +185,7 @@ final class AudioLevelMonitor: ObservableObject {
         system = 0
         micSilent = false
         systemSilent = false
+        tracksSystemAudio = true
         micSilence.reset()
         systemSilence.reset()
     }

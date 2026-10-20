@@ -8,10 +8,12 @@ final class CallDetector: ObservableObject {
     @Published private(set) var micActive = false
 
     var onDetect: ((RecordingSource) -> Void)?
-    var onEnd: (() -> Void)?
+    /// A call looks over: the bundle id of the call app that quit, or `nil` when the
+    /// mic went quiet.
+    var onEnd: ((String?) -> Void)?
 
     private let browserDetector = BrowserCallDetector()
-    private let queue = DispatchQueue(label: "com.whatdidisay.calldetector")
+    private let queue = DispatchQueue(label: "com.wcoetzee.whatdidisay.calldetector")
     private var inputDevice = AudioDeviceID(kAudioObjectUnknown)
     private var runningListener: AudioObjectPropertyListenerBlock?
     private var deviceListener: AudioObjectPropertyListenerBlock?
@@ -51,7 +53,7 @@ final class CallDetector: ObservableObject {
                 guard let self, let bundleID,
                       RecordingSource.source(forBundleID: bundleID) != nil
                         || RecordingSource.browserBundleIDs.contains(bundleID) else { return }
-                self.onEnd?()
+                self.onEnd?(bundleID)
             }
         }
     }
@@ -84,7 +86,7 @@ final class CallDetector: ObservableObject {
         coldStopTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(5))
             guard let self, !Task.isCancelled, !self.isMicRunning() else { return }
-            self.onEnd?()
+            self.onEnd?(nil)
         }
     }
 

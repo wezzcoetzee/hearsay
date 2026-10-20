@@ -7,6 +7,7 @@ import Testing
         #expect(RecordingSource.slack.displayName == "Slack Huddle")
         #expect(RecordingSource.teams.displayName == "Teams Call")
         #expect(RecordingSource.googleMeet.displayName == "Google Meet")
+        #expect(RecordingSource.inPerson.displayName == "In Person")
     }
 
     @Test func googleMeetCapturesTheHostBrowser() {
@@ -16,6 +17,13 @@ import Testing
 
     @Test func manualHasNoBundleIDs() {
         #expect(RecordingSource.manual.bundleIDs.isEmpty)
+    }
+
+    @Test func onlyInPersonSkipsSystemAudio() {
+        #expect(RecordingSource.inPerson.usesSystemAudio == false)
+        for source in [RecordingSource.manual, .slack, .teams, .googleMeet] {
+            #expect(source.usesSystemAudio)
+        }
     }
 
     @Test func detectableExcludesManual() {

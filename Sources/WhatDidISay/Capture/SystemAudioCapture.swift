@@ -8,7 +8,7 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
     private var input: AVAssetWriterInput?
     private var sessionStarted = false
     private var finalizeResumed = false
-    private let queue = DispatchQueue(label: "com.whatdidisay.systemaudio")
+    private let queue = DispatchQueue(label: "com.wcoetzee.whatdidisay.systemaudio")
     private let levels: AudioLevelSink
 
     init(levels: AudioLevelSink) {

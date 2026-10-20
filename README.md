@@ -1,6 +1,6 @@
-# what-did-i-say
+# What Did I Say
 
-macOS menu-bar app that detects Slack huddles / Teams calls / Google Meet (in the browser), records both sides, transcribes locally with WhisperKit, and writes a markdown note to your Obsidian vault.
+macOS menu-bar app that detects Slack huddles / Teams calls / Google Meet (in the browser), records both sides, transcribes locally with WhisperKit, and writes a markdown note to your Obsidian vault. It also records in-person meetings from the laptop microphone alone.
 
 See [DESIGN.md](DESIGN.md) for the full design and [PRODUCT.md](PRODUCT.md) for the product overview.
 
@@ -20,19 +20,21 @@ open build/WhatDidISay.app
 
 On first use, grant the permissions macOS prompts for:
 
-- **Microphone** — records your side
-- **Screen Recording** — required for ScreenCaptureKit to capture the other participants' audio
+- **Microphone** — records your side, and the whole room for in-person meetings
+- **Screen Recording** — required for ScreenCaptureKit to capture the other participants' audio. Only calls need it; recording the room works with the microphone alone.
 
 ## Usage
 
 1. Click the waveform menu-bar icon.
 2. Set **Vault** to your Obsidian vault (or any folder) and pick a Whisper **Model** (`base` is a good default; `large-v3` is most accurate).
-3. **Manual:** click *Start Recording* / *Stop Recording*.
+3. **Manual:** click *Start Recording* / *Stop Recording*. The chevron beside it offers *Record a Call* (both sides) and *Record the Room* for an ad-hoc in-person meeting, which captures the microphone only.
 4. **Auto:** toggle *Auto-detect huddles & calls*. When your mic goes live while Slack or Teams is running — or a browser has a live Google Meet tab open — a countdown prompt appears; click *Start Recording* to begin. If you do nothing, the prompt dismisses after 15 seconds and nothing is recorded. Recording stops when the mic goes quiet.
 
    Google Meet detection uses Accessibility to spot a tab whose title carries a Meet meeting code (`abc-defg-hij`), so a browser that's merely open won't trigger a prompt. Grant Accessibility if macOS prompts for it; without it, Meet calls still record via *Start Recording* manually. Capture targets the host browser's audio, so audio from that browser's other tabs can bleed into the recording.
 
 Notes are written as `YYYY-MM-DD HHMM <Source>.md` with YAML frontmatter and a `Me` / `Others` labeled transcript.
+
+In-person recordings have no second track to tell you apart from everyone else, so every voice in the room is diarized into `Speaker 1`, `Speaker 2`, … and the review dialog lets you name each one. Naming a voice relabels it throughout the transcript; voices you leave unnamed keep their label and stay out of the participant list.
 
 ## Layout
 
@@ -45,10 +47,11 @@ Sources/WhatDidISay/
 ├── Onboarding.swift               first-run setup flow
 ├── PermissionsManager.swift       microphone / screen-recording status
 ├── Keychain.swift                 secure storage for the Anthropic API key
-├── ParticipantReview.swift        post-recording roster confirm/correct dialog
+├── ParticipantReview.swift        post-recording dialog: name each voice, confirm the roster
 ├── Capture/                       RecordingController, System/Mic capture, Session
 ├── Transcription/                 WhisperKit service, merge, segment model, Diarizer
 ├── Summary/SummaryService.swift   Ollama / Claude summarizers
+├── Pipeline/                      NotePipeline (post-recording sequence), Roster (voice → name)
 ├── Output/                        MarkdownWriter (note rendering), RecordingHistory
 └── Detection/                     CallDetector + CallActivityMonitor (Core Audio),
                                    BrowserCallDetector (Meet tab via Accessibility),
@@ -64,9 +67,11 @@ Sources/WhatDidISay/
 - ✅ Phase 5 — per-app audio capture (records only the call app) + reliable huddle-end detection via Core Audio per-process output
 - ✅ Phase 6 — best-effort participant detection (Accessibility + Vision OCR) with a post-recording review dialog to confirm/correct the roster
 - ✅ Phase 7 — browser call support: auto-detect Google Meet via an Accessibility tab-title check and capture the host browser's audio
+- ✅ Phase 8 — in-person meetings: mic-only capture with no Screen Recording requirement, forced diarization of the room, and per-voice naming in review
 
 ## Optional features
 
-- **AI summary** — toggle in the menu. *Local* uses [Ollama](https://ollama.com) on `localhost:11434` (set the model name; default `llama3.2`). *Cloud* uses the Anthropic API (`claude-opus-4-8`) — paste an API key (stored in the macOS Keychain). A "## Summary" + action-items section is prepended to each note.
-- **Separate remote speakers** — toggle to run SpeakerKit diarization on the system-audio track, relabeling `Others` as `Speaker 1`, `Speaker 2`, … Downloads a diarization model on first use.
-- **Recent recordings** — the last five notes appear in the menu with quick-open buttons; history persists in `~/Library/Application Support/WhatDidISay/history.json`.
+- **AI summary** — toggle in the menu. *Local* uses [Ollama](https://ollama.com) on `localhost:11434` (set the model name; default `llama3.2`). *Cloud* uses the Anthropic API (`claude-opus-5-5`) — paste an API key (stored in the macOS Keychain). A "## Summary" + action-items section is prepended to each note. The summary runs after you confirm participants, so it uses real names, and a call you delete is never summarized. If the summary can't be made (Ollama not running, no API key), the note says why instead of silently leaving it out.
+- **Separate remote speakers** — toggle to run SpeakerKit diarization on the system-audio track, relabeling `Others` as `Speaker 1`, `Speaker 2`, … Downloads a diarization model on first use. In-person recordings always diarize, whatever this is set to, because it is the only thing separating the voices in the room.
+- **Recent recordings** — the last five notes appear in the menu with quick-open buttons; history persists in `~/Library/Application Support/WhatDidISay/history.json`. Removing an entry only removes it from the list; it never deletes files.
+- **Failed or cancelled processing** — the audio is kept. The menu offers *Try Again* (re-processes the same recording) or *Discard* (deletes it).

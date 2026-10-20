@@ -23,12 +23,15 @@ final class AppCoordinator: ObservableObject {
         self.onboarding = OnboardingController(permissions: permissions, settings: settings)
 
         let review = participantReview
-        recorder.confirmParticipants = { candidates in
-            await review.review(candidates: candidates)
+        recorder.confirmRoster = { request in
+            await review.review(request)
         }
 
         detector.onDetect = { [weak self] source in
-            guard let self, !self.recorder.isBusy, self.permissions.allGranted else { return }
+            guard let self, !self.recorder.isBusy else { return }
+            // Permissions may have changed in System Settings since we last looked.
+            self.permissions.refresh()
+            guard self.permissions.allGranted else { return }
             self.confirmation.present(source: source)
         }
         confirmation.onConfirm = { [weak self] source in
@@ -41,8 +44,9 @@ final class AppCoordinator: ObservableObject {
             guard let self else { return false }
             return self.settings.summaryEnabled && self.settings.summaryBackend == .cloud
         }
-        detector.onEnd = { [weak self] in
-            Task { await self?.recorder.stop() }
+        detector.onEnd = { [weak self] bundleID in
+            self?.confirmation.withdraw(ifEndedBy: bundleID)
+            Task { await self?.recorder.endDetectedCall(app: bundleID) }
         }
 
         controlPanel.onStop = { [weak self] in
@@ -63,7 +67,12 @@ final class AppCoordinator: ObservableObject {
 
         settings.$autoDetect
             .sink { [weak self] enabled in
-                enabled ? self?.detector.start() : self?.detector.stop()
+                if enabled {
+                    self?.detector.start()
+                } else {
+                    self?.detector.stop()
+                    self?.confirmation.dismiss()
+                }
             }
             .store(in: &bag)
 
@@ -71,6 +80,11 @@ final class AppCoordinator: ObservableObject {
             .sink { [weak self] enabled in self?.controlPanel.isEnabled = enabled }
             .store(in: &bag)
 
-        onboarding.presentIfNeeded()
+        // This init runs inside SwiftUI's scene-graph update (via @StateObject). Opening a
+        // hosted window synchronously here nests a second graph update and SwiftUI aborts
+        // the app, so show onboarding once launch has finished.
+        Task { @MainActor [weak self] in
+            self?.onboarding.presentIfNeeded()
+        }
     }
 }

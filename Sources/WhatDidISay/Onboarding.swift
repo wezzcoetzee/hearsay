@@ -91,6 +91,10 @@ struct OnboardingView: View {
         }
         .frame(width: 460, height: 580)
         .onAppear { permissions.refresh() }
+        // Grants happen in System Settings; pick them up when the user comes back.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            permissions.refresh()
+        }
     }
 
     private var header: some View {
@@ -122,17 +126,14 @@ struct OnboardingView: View {
             title: "Microphone",
             why: "Captures your side of the conversation so your words appear in the transcript.",
             status: permissions.microphone,
-            action: { await permissions.requestMicrophone() })
+            action: { await permissions.request(.microphone) })
         case 2: permissionStep(
             icon: "rectangle.inset.filled.and.person.filled",
             title: "Screen Recording",
             why: "macOS routes system audio through the Screen Recording permission. It's how the app captures everyone else on the call. No video is ever recorded.",
             status: permissions.screenRecording,
             note: "After you allow it, the app must be relaunched for macOS to apply the change.",
-            action: {
-                await permissions.requestScreenRecording()
-                permissions.openSettings(.screenRecording)
-            })
+            action: { await permissions.request(.screenRecording) })
         case 3: vaultStep
         case 4: audioStep
         default: doneStep
@@ -235,9 +236,7 @@ struct OnboardingView: View {
                     .toggleStyle(.switch)
                     .accessibilityLabel("Keep audio recordings")
             }
-            Text(settings.keepAudio
-                 ? "After a call is transcribed, its audio files are saved to this folder. Without a folder, audio is still deleted."
-                 : "Audio is deleted once the note is saved. Turn this on to keep the recordings.")
+            Text(settings.keepAudioExplanation)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -280,7 +279,7 @@ struct OnboardingView: View {
             if !permissions.allGranted {
                 Image(systemName: "arrow.clockwise.circle.fill").font(.system(size: 48)).foregroundStyle(.orange)
                 Text("One more step").font(.title3).bold()
-                Text("Screen Recording needs a relaunch to take effect. Relaunch now to finish.")
+                Text("If you allowed Screen Recording, relaunch to apply it. Without it you can still record the room from the menu.")
                     .foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Relaunch Now", action: onRelaunch)

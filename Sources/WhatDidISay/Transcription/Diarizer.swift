@@ -26,14 +26,22 @@ final class Diarizer: Diarizing, @unchecked Sendable {
         }
     }
 
+    /// Labels each segment with the speaker whose span covers its midpoint. Whisper and
+    /// the diarizer rarely agree on exact boundaries, so a midpoint that falls in a gap
+    /// goes to the nearest span rather than keeping a generic label.
     static func assignSpeakers(_ segments: [TranscriptSegment], spans: [SpeakerSpan]) -> [TranscriptSegment] {
-        guard !spans.isEmpty else { return segments }
+        let known = spans.filter { $0.speakerId >= 0 }
+        guard !known.isEmpty else { return segments }
         return segments.map { segment in
             let midpoint = (segment.start + segment.end) / 2
-            if let span = spans.first(where: { midpoint >= $0.start && midpoint <= $0.end }), span.speakerId >= 0 {
-                return segment.relabeled(.numbered(span.speakerId))
-            }
-            return segment
+            let nearest = known.min { distance(from: midpoint, to: $0) < distance(from: midpoint, to: $1) }
+            return nearest.map { segment.relabeled(.numbered($0.speakerId)) } ?? segment
         }
+    }
+
+    private static func distance(from time: Double, to span: SpeakerSpan) -> Double {
+        if time < span.start { return span.start - time }
+        if time > span.end { return time - span.end }
+        return 0
     }
 }

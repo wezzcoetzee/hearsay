@@ -8,7 +8,8 @@ enum AudioArchiver {
         defer { if didAccess { folder.stopAccessingSecurityScopedResource() } }
 
         let fm = FileManager.default
-        let tracks = [("system", session.systemAudioURL), ("mic", session.micAudioURL)]
+        let candidates: [(String, URL?)] = [("system", session.systemAudioURL), ("mic", session.micAudioURL)]
+        let tracks = candidates.compactMap { track, url in url.map { (track, $0) } }
         for (track, source) in tracks where fm.fileExists(atPath: source.path) {
             let name = AudioFilenameFormatter.render(
                 format: format,

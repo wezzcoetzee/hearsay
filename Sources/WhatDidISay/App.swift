@@ -57,6 +57,9 @@ struct MenuContent: View {
     let onboarding: OnboardingController
 
     @State private var showConsentAlert = false
+    @State private var pendingSource: RecordingSource = .manual
+    @State private var confirmingQuit = false
+    @State private var confirmingDiscard = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -86,14 +89,24 @@ struct MenuContent: View {
         .padding(14)
         .frame(width: 320)
         .onAppear { permissions.refresh() }
-        .alert("Start recording this call?", isPresented: $showConsentAlert) {
+        .alert("Start recording?", isPresented: $showConsentAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Record") {
                 settings.hasAcknowledgedConsent = true
-                Task { await recorder.toggle() }
+                Task { await recorder.toggle(source: pendingSource) }
             }
         } message: {
-            Text("Everyone on the call may be recorded. Audio and transcripts stay on your Mac unless you turn on cloud summaries. Record responsibly.")
+            Text(pendingSource.usesSystemAudio
+                 ? "Everyone on the call may be recorded. Audio and transcripts stay on your Mac unless you turn on cloud summaries. Record responsibly."
+                 : "Everyone in the room may be recorded. Audio and transcripts stay on your Mac unless you turn on cloud summaries. Record responsibly.")
+        }
+        .alert("Quit without saving this call?", isPresented: $confirmingQuit) {
+            Button("Cancel", role: .cancel) {}
+            Button("Quit", role: .destructive) { NSApplication.shared.terminate(nil) }
+        } message: {
+            Text(recorder.isBusy
+                 ? "It won't be saved as a note."
+                 : "Its audio stays in Application Support, but you won't be able to retry it after quitting.")
         }
     }
 
@@ -110,7 +123,11 @@ struct MenuContent: View {
             Spacer()
             StatusBadge(state: recorder.state)
             Button {
-                NSApplication.shared.terminate(nil)
+                if recorder.isBusy || recorder.unsaved != nil {
+                    confirmingQuit = true
+                } else {
+                    NSApplication.shared.terminate(nil)
+                }
             } label: {
                 Image(systemName: "power")
                     .foregroundStyle(.secondary)
@@ -126,14 +143,15 @@ struct MenuContent: View {
         VStack(alignment: .leading, spacing: 7) {
             TimelineView(.periodic(from: since, by: 1)) { context in
                 let elapsed = Int(context.date.timeIntervalSince(since))
-                Label(String(format: "Recording  %02d:%02d", elapsed / 60, elapsed % 60),
-                      systemImage: "record.circle.fill")
+                Label("Recording  \(ElapsedTime.clock(elapsed))", systemImage: "record.circle.fill")
                     .font(.callout.weight(.medium)).foregroundStyle(.red).monospacedDigit()
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityLabel("Recording, \(elapsed / 60) minutes \(elapsed % 60) seconds")
+                    .accessibilityLabel("Recording, \(ElapsedTime.spoken(elapsed))")
             }
             meterRow("Microphone", symbol: "mic.fill", level: levels.mic, isSilent: levels.micSilent)
-            meterRow("Call audio", symbol: "speaker.wave.2.fill", level: levels.system, isSilent: false)
+            if levels.tracksSystemAudio {
+                meterRow("Call audio", symbol: "speaker.wave.2.fill", level: levels.system, isSilent: false)
+            }
             if levels.micSilent {
                 Text("Nothing is reaching the microphone. Check it isn't muted and that the right input device is selected.")
                     .font(.caption2).foregroundStyle(.orange)
@@ -156,23 +174,47 @@ struct MenuContent: View {
         }
     }
 
+    /// Stopping is a single action; starting is a split button, so the common case
+    /// (a call) stays one click and recording the room is one menu away.
+    @ViewBuilder
     private var recordButton: some View {
-        Button {
-            if recorder.isRecording || settings.hasAcknowledgedConsent {
-                Task { await recorder.toggle() }
-            } else {
-                showConsentAlert = true
+        if recorder.isRecording {
+            Button { Task { await recorder.toggle() } } label: { recordLabel }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(.red)
+                .disabled(recordButtonDisabled)
+        } else {
+            Menu {
+                Button("Record a Call") { begin(.manual) }
+                Button("Record the Room") { begin(.inPerson) }
+            } label: {
+                recordLabel
+            } primaryAction: {
+                begin(.manual)
             }
-        } label: {
-            Label(buttonTitle, systemImage: recorder.isRecording ? "stop.circle.fill" : "record.circle")
-                .font(.body.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 3)
+            .menuStyle(.button)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(.accentColor)
+            .disabled(recordButtonDisabled)
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
-        .tint(recorder.isRecording ? .red : .accentColor)
-        .disabled(recordButtonDisabled)
+    }
+
+    private var recordLabel: some View {
+        Label(buttonTitle, systemImage: recorder.isRecording ? "stop.circle.fill" : "record.circle")
+            .font(.body.weight(.semibold))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 3)
+    }
+
+    private func begin(_ source: RecordingSource) {
+        pendingSource = source
+        if settings.hasAcknowledgedConsent {
+            Task { await recorder.toggle(source: source) }
+        } else {
+            showConsentAlert = true
+        }
     }
 
     @ViewBuilder
@@ -209,16 +251,33 @@ struct MenuContent: View {
                 .font(.caption).foregroundStyle(.red)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 12) {
-                Button("Try Again") { Task { await recorder.toggle() } }
-                    .controlSize(.small)
-                if !permissions.allGranted {
-                    Button("Open Setup Guide") { onboarding.present() }
-                        .controlSize(.small)
-                } else if !settings.hasOutputFolder {
+                if !settings.hasOutputFolder {
                     Button("Choose Folder") { settings.chooseOutputFolder() }
                         .controlSize(.small)
                 }
+                // A failed note re-processes the recording it already has; a failed
+                // start tries the same kind of recording again.
+                if recorder.canRetryProcessing {
+                    Button("Try Again") { Task { await recorder.retryProcessing() } }
+                        .controlSize(.small)
+                        .disabled(!settings.hasOutputFolder)
+                    Button("Discard", role: .destructive) { confirmingDiscard = true }
+                        .controlSize(.small)
+                } else {
+                    Button("Try Again") { begin(recorder.lastSource) }
+                        .controlSize(.small)
+                    if !permissions.isGranted(for: recorder.lastSource) {
+                        Button("Open Setup Guide") { onboarding.present() }
+                            .controlSize(.small)
+                    }
+                }
             }
+        }
+        .confirmationDialog("Discard this recording?", isPresented: $confirmingDiscard) {
+            Button("Discard Recording", role: .destructive) { Task { await recorder.discardUnsaved() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The audio is deleted and no note is saved. This can't be undone.")
         }
     }
 
@@ -241,16 +300,23 @@ struct MenuContent: View {
     }
 
     private func savedRow(_ save: RecordingController.SaveConfirmation) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                .accessibilityHidden(true)
-            Text("Saved to \(save.folderName)")
-                .font(.caption).foregroundStyle(.secondary)
-                .lineLimit(1).truncationMode(.middle)
-            Spacer()
-            if let url = save.noteURL {
-                Button("Open") { NSWorkspace.shared.open(url) }
-                    .controlSize(.small)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    .accessibilityHidden(true)
+                Text("Saved to \(save.folderName)")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer()
+                if let url = save.noteURL {
+                    Button("Open") { NSWorkspace.shared.open(url) }
+                        .controlSize(.small)
+                }
+            }
+            if let warning = save.warning {
+                Label(warning, systemImage: "exclamationmark.triangle")
+                    .font(.caption2).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .accessibilityElement(children: .combine)
@@ -324,8 +390,10 @@ struct MenuContent: View {
             Text(name).font(.caption)
             Spacer()
             if !status.isGranted {
-                Button("Open Settings") { permissions.openSettings(pane) }
-                    .font(.caption2)
+                Button(status == .unknown ? "Allow" : "Open Settings") {
+                    Task { await permissions.request(pane) }
+                }
+                .font(.caption2)
             }
         }
     }
@@ -334,7 +402,9 @@ struct MenuContent: View {
         switch recorder.state {
         case .finishing, .processing: return true
         case .recording: return false
-        case .idle, .failed: return !permissions.allGranted
+        // Recording the room only needs the microphone, so Screen Recording can't
+        // disable the button. Starting a call without it fails with a clear message.
+        case .idle, .failed: return !permissions.microphone.isGranted
         }
     }
 
@@ -384,7 +454,8 @@ private struct HistoryRow: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
-            if let note = entry.noteURL {
+            // Notes can be moved or deleted in the vault; don't offer to open a ghost.
+            if let note = entry.noteURL, FileManager.default.fileExists(atPath: note.path) {
                 Button {
                     onOpen(note)
                 } label: {

@@ -1,9 +1,12 @@
 import Foundation
 
 /// Turns a finished recording into a saved note. Owns the whole post-recording
-/// sequence — transcribe, summarize, review participants, render, write — behind a
+/// sequence — transcribe, review participants, summarize, render, write — behind a
 /// single call, so the ordering, cancellation, and participant-fork logic live in one
 /// place and can be exercised through fakes at each seam.
+///
+/// Review comes before the summary on purpose: a call the user deletes never reaches
+/// a summarizer (which may be in the cloud), and the summary sees real names.
 @MainActor
 struct NotePipeline {
     enum Stage: Equatable {
@@ -31,10 +34,13 @@ struct NotePipeline {
 
     let transcript: TranscriptBuilder
     let summarize: @MainActor ([TranscriptSegment]) async -> String?
-    let confirmParticipants: (([String]) async -> [String]?)?
+    let confirmRoster: ((RosterReview) async -> ReviewedRoster?)?
     var writeNote: (String, RecordingSource, Date, URL) throws -> URL = MarkdownWriter.write
 
     func run(_ input: Input, onStage: @MainActor (Stage) -> Void) async throws -> Outcome {
+        // Checked up front so the user can fix it and retry before minutes of transcription.
+        guard let folder = input.outputFolder else { return .folderMissing }
+
         let segments = try await transcript.build(
             system: input.session.systemAudioURL,
             mic: input.session.micAudioURL,
@@ -49,35 +55,39 @@ struct NotePipeline {
         }
         try Task.checkCancellation()
 
+        onStage(.reviewing)
+        let review = RosterReview(
+            voices: RosterReview.voices(in: segments),
+            others: input.detectedParticipants.sorted()
+        )
+        let roster: ReviewedRoster
+        if let confirmRoster {
+            let reviewed = await confirmRoster(review)
+            // Cancelling closes the review too; that `nil` isn't a request to delete.
+            try Task.checkCancellation()
+            guard let reviewed else { return .deleted }
+            roster = reviewed
+        } else {
+            roster = review.unreviewed
+        }
+        let named = roster.apply(to: segments)
+
         if input.summaryEnabled { onStage(.summarizing) }
-        let summary = await summarize(segments)
+        let summary = await summarize(named)
         try Task.checkCancellation()
 
-        onStage(.reviewing)
-        let candidates = ["Me"] + input.detectedParticipants.sorted()
-        let participants: [String]
-        if let confirmParticipants {
-            guard let reviewed = await confirmParticipants(candidates) else {
-                return .deleted
-            }
-            participants = reviewed
-        } else {
-            participants = candidates
-        }
-
         let session = input.session
-        session.participants = participants
-        session.segmentCount = segments.count
+        session.participants = roster.participants
+        session.segmentCount = named.count
 
         let metadata = NoteMetadata(
             date: session.startedAt,
             source: session.source,
             duration: session.duration,
-            participants: participants
+            participants: roster.participants
         )
-        let markdown = MarkdownWriter.render(segments: segments, metadata: metadata, summary: summary)
+        let markdown = MarkdownWriter.render(segments: named, metadata: metadata, summary: summary)
 
-        guard let folder = input.outputFolder else { return .folderMissing }
         onStage(.saving)
         session.noteURL = try writeNote(markdown, session.source, session.startedAt, folder)
         return .saved(noteURL: session.noteURL, folder: folder)

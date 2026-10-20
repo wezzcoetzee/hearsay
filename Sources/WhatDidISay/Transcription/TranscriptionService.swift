@@ -16,6 +16,9 @@ final class TranscriptionService: Transcribing, @unchecked Sendable {
     }
 
     func transcribe(url: URL, speaker: Speaker, model: String, hints: [String]) async throws -> [TranscriptSegment] {
+        // The system writer only creates its file once audio arrives, so a call where
+        // the far end never made a sound has no track. That's silence, not a failure.
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
         try await loadIfNeeded(model: model)
         guard let pipe else { return [] }
 

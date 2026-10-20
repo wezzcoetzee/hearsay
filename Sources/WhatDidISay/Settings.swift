@@ -81,6 +81,12 @@ final class Settings: ObservableObject {
 
     var hasOutputFolder: Bool { outputFolderPath != nil }
 
+    var keepAudioExplanation: String {
+        keepAudio
+            ? "After a call is transcribed, its audio files are saved to this folder. Until you choose one, they're kept in Application Support."
+            : "Audio is deleted once the note is saved. Turn this on to keep the recordings."
+    }
+
     var outputFolderName: String? {
         outputFolderPath.map { ($0 as NSString).lastPathComponent }
     }
@@ -123,6 +129,13 @@ final class Settings: ObservableObject {
 
     func resolveAudioFolder() -> URL? {
         resolveFolder(bookmarkKey: Keys.audioBookmark)
+    }
+
+    /// Re-resolves both bookmarks, so a folder deleted since launch shows as unset and
+    /// the UI prompts for a new one instead of claiming it's still there.
+    func revalidateFolders() {
+        outputFolderPath = resolveOutputFolder()?.path
+        audioFolderPath = resolveAudioFolder()?.path
     }
 
     func chooseOutputFolder() {

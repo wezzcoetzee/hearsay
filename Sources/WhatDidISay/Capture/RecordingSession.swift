@@ -2,6 +2,7 @@ import Foundation
 
 enum RecordingSource: String {
     case manual
+    case inPerson
     case slack
     case teams
     case googleMeet
@@ -9,6 +10,7 @@ enum RecordingSource: String {
     var displayName: String {
         switch self {
         case .manual: return "Manual"
+        case .inPerson: return "In Person"
         case .slack: return "Slack Huddle"
         case .teams: return "Teams Call"
         case .googleMeet: return "Google Meet"
@@ -17,7 +19,7 @@ enum RecordingSource: String {
 
     var bundleIDs: [String] {
         switch self {
-        case .manual: return []
+        case .manual, .inPerson: return []
         case .slack: return ["com.tinyspeck.slackmacgap"]
         case .teams: return ["com.microsoft.teams2", "com.microsoft.teams"]
         case .googleMeet: return RecordingSource.browserBundleIDs
@@ -35,6 +37,11 @@ enum RecordingSource: String {
         "org.mozilla.firefox",
         "com.apple.Safari"
     ]
+
+    /// In-person meetings are recorded from the microphone alone: everyone is in the
+    /// room, so there is no far-end audio to capture and no reason to ask for Screen
+    /// Recording.
+    var usesSystemAudio: Bool { self != .inPerson }
 
     /// Apps recognised by their own bundle id when the mic goes live. Browser calls
     /// aren't here: a running browser isn't a call, so they need the tab check in
@@ -54,6 +61,9 @@ final class RecordingSession {
     var noteURL: URL?
     var segmentCount: Int = 0
     var participants: [String] = []
+    /// Names spotted on screen during the call, kept with the session so a retry
+    /// after a failure still has them.
+    var detectedParticipants: [String] = []
 
     let directory: URL
 
@@ -67,7 +77,12 @@ final class RecordingSession {
         self.directory = base.appendingPathComponent(Self.folderName(for: startedAt, id: id), isDirectory: true)
     }
 
-    var systemAudioURL: URL { directory.appendingPathComponent("system.m4a") }
+    /// `nil` for sources recorded from the microphone alone, so callers can't reach
+    /// for a system track that was never captured.
+    var systemAudioURL: URL? {
+        source.usesSystemAudio ? directory.appendingPathComponent("system.m4a") : nil
+    }
+
     var micAudioURL: URL { directory.appendingPathComponent("mic.caf") }
 
     var duration: TimeInterval {

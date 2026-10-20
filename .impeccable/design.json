@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-07-15T00:00:00Z",
-  "title": "Design System: what-did-i-say",
+  "title": "Design System: What Did I Say",
   "extensions": {
     "colorMeta": {
       "accent-tint": { "role": "primary", "displayName": "System Accent", "canonical": "system .accentColor (user-configurable; ~#007AFF default light)", "tonalRamp": ["#002E5C", "#004A94", "#0060C0", "#007AFF", "#3D97FF", "#6FB2FF", "#A6CFFF", "#D6E9FF"] },
