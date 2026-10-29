@@ -59,7 +59,7 @@ struct MenuContent: View {
     @State private var showConsentAlert = false
     @State private var pendingSource: RecordingSource = .manual
     @State private var confirmingQuit = false
-    @State private var confirmingDiscard = false
+    @State private var discarding: RecordingSession?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -81,6 +81,7 @@ struct MenuContent: View {
 
             recordButton
             statusRow
+            needsAttentionBlock
             historyBlock
 
             Divider()
@@ -100,13 +101,19 @@ struct MenuContent: View {
                  ? "Everyone on the call may be recorded. Audio and transcripts stay on your Mac unless you turn on cloud summaries. Record responsibly."
                  : "Everyone in the room may be recorded. Audio and transcripts stay on your Mac unless you turn on cloud summaries. Record responsibly.")
         }
-        .alert("Quit without saving this call?", isPresented: $confirmingQuit) {
+        .alert("Quit before this call is a note?", isPresented: $confirmingQuit) {
             Button("Cancel", role: .cancel) {}
             Button("Quit", role: .destructive) { NSApplication.shared.terminate(nil) }
         } message: {
-            Text(recorder.isBusy
-                 ? "It won't be saved as a note."
-                 : "Its audio stays in Application Support, but you won't be able to retry it after quitting.")
+            Text("Its audio is kept and shows under Needs attention when you reopen the app.")
+        }
+        .confirmationDialog("Discard this recording?",
+                            isPresented: Binding(get: { discarding != nil }, set: { if !$0 { discarding = nil } }),
+                            presenting: discarding) { session in
+            Button("Discard Recording", role: .destructive) { Task { await recorder.discard(session) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("The audio is deleted and no note is saved. This can't be undone.")
         }
     }
 
@@ -123,7 +130,7 @@ struct MenuContent: View {
             Spacer()
             StatusBadge(state: recorder.state)
             Button {
-                if recorder.isBusy || recorder.unsaved != nil {
+                if recorder.isBusy {
                     confirmingQuit = true
                 } else {
                     NSApplication.shared.terminate(nil)
@@ -223,7 +230,7 @@ struct MenuContent: View {
             progressRow("Saving audio", cancellable: false)
         }
         if case .processing(let stage) = recorder.state {
-            progressRow(stage.rawValue, cancellable: true)
+            progressRow(stage.rawValue, cancellable: true, audioSaved: true)
         }
         if case .failed(let message) = recorder.state {
             failureRow(message)
@@ -233,10 +240,14 @@ struct MenuContent: View {
         }
     }
 
-    private func progressRow(_ text: String, cancellable: Bool) -> some View {
+    private func progressRow(_ text: String, cancellable: Bool, audioSaved: Bool = false) -> some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
             Text("\(text)…").font(.caption).foregroundStyle(.secondary)
+            if audioSaved {
+                Label("Audio saved", systemImage: "checkmark")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
             Spacer()
             if cancellable {
                 Button("Cancel") { recorder.cancelProcessing() }
@@ -255,15 +266,9 @@ struct MenuContent: View {
                     Button("Choose Folder") { settings.chooseOutputFolder() }
                         .controlSize(.small)
                 }
-                // A failed note re-processes the recording it already has; a failed
-                // start tries the same kind of recording again.
-                if recorder.canRetryProcessing {
-                    Button("Try Again") { Task { await recorder.retryProcessing() } }
-                        .controlSize(.small)
-                        .disabled(!settings.hasOutputFolder)
-                    Button("Discard", role: .destructive) { confirmingDiscard = true }
-                        .controlSize(.small)
-                } else {
+                // A failed note is retried from Needs attention; a failed start tries
+                // the same kind of recording again.
+                if recorder.failedToStart {
                     Button("Try Again") { begin(recorder.lastSource) }
                         .controlSize(.small)
                     if !permissions.isGranted(for: recorder.lastSource) {
@@ -272,12 +277,6 @@ struct MenuContent: View {
                     }
                 }
             }
-        }
-        .confirmationDialog("Discard this recording?", isPresented: $confirmingDiscard) {
-            Button("Discard Recording", role: .destructive) { Task { await recorder.discardUnsaved() } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The audio is deleted and no note is saved. This can't be undone.")
         }
     }
 
@@ -321,6 +320,43 @@ struct MenuContent: View {
         }
         .accessibilityElement(children: .combine)
     }
+
+    /// Recordings that never became notes. Audio is kept until the user processes or
+    /// discards each one, so a crash mid-transcription costs a retry, not the call.
+    @ViewBuilder
+    private var needsAttentionBlock: some View {
+        let pending = recorder.needsAttention
+        if !pending.isEmpty {
+            Divider()
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Needs Attention · \(pending.count)")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                    Spacer()
+                    if pending.count > 1 {
+                        Button("Process All") { Task { await recorder.processAll() } }
+                            .font(.caption2)
+                            .buttonStyle(.borderless)
+                            .disabled(recorder.isBusy || !settings.hasOutputFolder)
+                    }
+                }
+                .padding(.horizontal, 2)
+                ForEach(pending.prefix(Self.visiblePending), id: \.id) { session in
+                    PendingRow(session: session,
+                               canProcess: !recorder.isBusy && settings.hasOutputFolder,
+                               onProcess: { Task { await recorder.retry(session) } },
+                               onDiscard: { discarding = session })
+                }
+                if pending.count > Self.visiblePending {
+                    Text("and \(pending.count - Self.visiblePending) more")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                }
+            }
+        }
+    }
+
+    private static let visiblePending = 5
 
     @ViewBuilder
     private var historyBlock: some View {
@@ -436,6 +472,47 @@ struct MenuContent: View {
                            onRemove: { history.remove(entry) })
             }
         }
+    }
+}
+
+private struct PendingRow: View {
+    let session: RecordingSession
+    let canProcess: Bool
+    let onProcess: () -> Void
+    let onDiscard: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(session.source.displayName).font(.caption.weight(.medium))
+                Text("\(session.startedAt.formatted(.dateTime.month().day().hour().minute())) · \(ElapsedTime.clock(Int(session.duration))) · \(status)")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            iconButton("arrow.clockwise", help: "Make a note from this recording", action: onProcess)
+                .disabled(!canProcess)
+            iconButton("trash", help: "Discard recording", action: onDiscard)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        .background(hovering ? Color.primary.opacity(0.07) : .clear,
+                    in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .onHover { hovering = $0 }
+    }
+
+    private var status: String {
+        session.progress == .transcribed ? "transcript saved" : "audio only"
+    }
+
+    private func iconButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .foregroundStyle(hovering ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+        }
+        .buttonStyle(.borderless)
+        .help(help)
+        .accessibilityLabel("\(help), \(session.source.displayName)")
     }
 }
 

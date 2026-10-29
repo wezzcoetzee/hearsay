@@ -1,6 +1,6 @@
 import Foundation
 
-struct Speaker: Equatable, Sendable {
+struct Speaker: Equatable, Codable, Sendable {
     private static let numberedPrefix = "Speaker "
 
     let label: String
@@ -15,7 +15,7 @@ struct Speaker: Equatable, Sendable {
     var isPlaceholder: Bool { self == .others || label.hasPrefix(Self.numberedPrefix) }
 }
 
-struct TranscriptSegment: Sendable {
+struct TranscriptSegment: Codable, Sendable {
     let start: Double
     let end: Double
     let text: String

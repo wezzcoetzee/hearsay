@@ -29,12 +29,7 @@ cp "$ROOT/Resources/Info.plist" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$CONTENTS/Info.plist"
 
-echo "▸ Ad-hoc signing…"
-codesign --force --sign - \
-    --options runtime \
-    --entitlements "$ROOT/Resources/$APP_NAME.entitlements" \
-    "$APP"
-codesign --verify --strict "$APP"
+"$ROOT/Scripts/sign.sh" "$APP"
 
 mkdir -p "$DIST"
 rm -rf "$DIST/$APP_NAME.app"

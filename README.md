@@ -12,11 +12,14 @@ See [DESIGN.md](DESIGN.md) for the full design and [PRODUCT.md](PRODUCT.md) for 
 ## Build & run
 
 ```sh
+./Scripts/setup-signing.sh   # once per machine
 ./Scripts/bundle.sh release
 open build/WhatDidISay.app
 ```
 
-`bundle.sh` compiles the executable, wraps it in a `.app` (so TCC permissions attach to the bundle id), and ad-hoc signs it with the hardened runtime.
+`bundle.sh` compiles the executable, wraps it in a `.app`, and signs it with the hardened runtime via `Scripts/sign.sh`.
+
+`setup-signing.sh` creates a self-signed "WhatDidISay Local Signing" certificate in the login keychain. Every build signed with it gets the same designated requirement (bundle id plus certificate), so macOS keeps Microphone and Screen Recording grants across rebuilds. Without it, `sign.sh` falls back to ad-hoc signing, which ties grants to the binary hash and re-prompts after every build. Override the identity with `SIGN_IDENTITY="..."`. The certificate is only meant for local builds: other Macs still need a Developer ID signature and notarization.
 
 On first use, grant the permissions macOS prompts for:
 
@@ -74,4 +77,4 @@ Sources/WhatDidISay/
 - **AI summary** — toggle in the menu. *Local* uses [Ollama](https://ollama.com) on `localhost:11434` (set the model name; default `llama3.2`). *Cloud* uses the Anthropic API (`claude-opus-5-5`) — paste an API key (stored in the macOS Keychain). A "## Summary" + action-items section is prepended to each note. The summary runs after you confirm participants, so it uses real names, and a call you delete is never summarized. If the summary can't be made (Ollama not running, no API key), the note says why instead of silently leaving it out.
 - **Separate remote speakers** — toggle to run SpeakerKit diarization on the system-audio track, relabeling `Others` as `Speaker 1`, `Speaker 2`, … Downloads a diarization model on first use. In-person recordings always diarize, whatever this is set to, because it is the only thing separating the voices in the room.
 - **Recent recordings** — the last five notes appear in the menu with quick-open buttons; history persists in `~/Library/Application Support/WhatDidISay/history.json`. Removing an entry only removes it from the list; it never deletes files.
-- **Failed or cancelled processing** — the audio is kept. The menu offers *Try Again* (re-processes the same recording) or *Discard* (deletes it).
+- **Needs attention** — a recording that never became a note (processing failed or was cancelled, or the app crashed or quit mid-call) is kept and listed under *Needs Attention*, including after a relaunch. Process each one, *Process All*, or discard it. Each recording folder carries a `session.json` progress marker (`recording` → `recorded` → `transcribed` → `noted`) and, once transcription finishes, a `transcript.json`, so a retry after a crash in review or summary skips straight past transcription. Folders from before the marker existed are recovered from their name and audio.

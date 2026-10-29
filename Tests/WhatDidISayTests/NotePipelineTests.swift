@@ -27,7 +27,7 @@ import Testing
         source: RecordingSource = .slack
     ) -> NotePipeline.Input {
         NotePipeline.Input(
-            session: RecordingSession(source: source),
+            session: RecordingSession(source: source, in: FileManager.default.temporaryDirectory),
             model: "base",
             diarize: false,
             summaryEnabled: summaryEnabled,
@@ -167,5 +167,19 @@ import Testing
         var stages: [NotePipeline.Stage] = []
         _ = try await pipeline().run(input(folder: nil)) { stages.append($0) }
         #expect(!stages.contains(.saving))
+    }
+
+    @Test func retryReusesTheSavedTranscriptInsteadOfTranscribingAgain() async throws {
+        let inp = input()
+        defer { inp.session.deleteRecording() }
+        try inp.session.saveTranscript([makeSegment(0, "from the first run", .me)])
+
+        var written: String?
+        _ = try await pipeline(others: [makeSegment(0, "transcribed again", .others)],
+                               write: { markdown, _, _, folder in written = markdown; return folder })
+            .run(inp) { _ in }
+
+        #expect(written?.contains("from the first run") == true)
+        #expect(written?.contains("transcribed again") == false)
     }
 }

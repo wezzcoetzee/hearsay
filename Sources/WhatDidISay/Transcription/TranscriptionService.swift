@@ -11,7 +11,10 @@ final class TranscriptionService: Transcribing, @unchecked Sendable {
 
     func loadIfNeeded(model: String) async throws {
         if pipe != nil, loadedModel == model { return }
-        pipe = try await WhisperKit(WhisperKitConfig(model: model, verbose: false, logLevel: .error))
+        // `load` must be explicit. WhisperKit only loads eagerly when given a model folder;
+        // otherwise each VAD chunk of a long recording calls `loadModels()` concurrently
+        // on first transcribe, races on the Core ML models, and segfaults.
+        pipe = try await WhisperKit(WhisperKitConfig(model: model, verbose: false, logLevel: .error, load: true))
         loadedModel = model
     }
 

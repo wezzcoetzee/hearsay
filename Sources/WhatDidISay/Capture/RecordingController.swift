@@ -29,14 +29,17 @@ final class RecordingController: ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published private(set) var lastSave: SaveConfirmation?
-    /// A finished recording that hasn't become a note yet. While processing it's the
-    /// call in flight; after a failure or cancel it's what "Try Again" re-processes and
-    /// "Discard" deletes.
-    @Published private(set) var unsaved: RecordingSession?
+    /// Recordings on disk that never became a note: failed, cancelled, or cut short by
+    /// a crash or quit. Rebuilt from disk at launch, newest first. The call being
+    /// processed right now isn't in it.
+    @Published private(set) var needsAttention: [RecordingSession] = []
+    private var inFlight: RecordingSession?
+    /// Set while "Process All" works through `needsAttention`; cancelling clears it.
+    private var processingAll = false
     /// What the latest start attempt recorded, so retrying a failed start repeats it.
     @Published private(set) var lastSource: RecordingSource = .manual
     /// True when the latest failure was a start, so the menu offers to retry the start
-    /// rather than re-process an older unsaved call.
+    /// rather than point at a recording.
     @Published private(set) var failedToStart = false
     private var saveClearTask: Task<Void, Never>?
     private var processingTask: Task<Void, Never>?
@@ -76,6 +79,7 @@ final class RecordingController: ObservableObject {
         activityMonitor.onEnded = { [weak self] in
             Task { await self?.stop() }
         }
+        needsAttention = RecordingSession.unfinished(notedPaths: Set(history.entries.compactMap(\.recordingPath)))
     }
 
     private func bundleID(for source: RecordingSource) -> String? {
@@ -136,14 +140,11 @@ final class RecordingController: ObservableObject {
         let session = RecordingSession(source: source)
         let target = bundleID(for: source)
         do {
-            try session.prepareDirectory()
+            try session.advance(to: .recording)
             if let systemAudioURL = session.systemAudioURL {
                 try await systemCapture.start(writingTo: systemAudioURL, targetBundleID: target)
             }
             try micCapture.start(writingTo: session.micAudioURL)
-            // A new call supersedes an earlier one that failed to save. Its audio stays
-            // in Application Support rather than being deleted behind the user's back.
-            unsaved = nil
             failedToStart = false
             current = session
             currentTarget = target
@@ -156,36 +157,57 @@ final class RecordingController: ObservableObject {
             }
         } catch {
             await teardown()
+            session.deleteRecording()
             NSLog("Recording start failed: \(error)")
             state = .failed("Couldn't start recording. Another app may be using the microphone or system audio. Try again.")
         }
     }
 
-    /// Stops processing but keeps the audio, so the call can still be retried or discarded.
+    /// Stops processing but keeps the audio, so the call lands in Needs attention.
     func cancelProcessing() {
         guard isProcessing else { return }
+        processingAll = false
         processingTask?.cancel()
         // A retry may still be waiting on an earlier run, with no task of its own yet.
         unwinding = processingTask ?? unwinding
         processingTask = nil
-        state = .failed("Processing stopped. The audio is still on your Mac.")
+        if let inFlight { setAside(inFlight) }
+        inFlight = nil
+        state = .failed("Processing stopped. The recording is under Needs attention.")
     }
 
-    /// Whether the failure on screen can be fixed by re-processing a kept recording.
-    var canRetryProcessing: Bool { unsaved != nil && !failedToStart }
-
-    func retryProcessing() async {
-        guard let session = unsaved, !isBusy else { return }
+    func retry(_ session: RecordingSession) async {
+        guard !isBusy else { return }
+        needsAttention.removeAll { $0 === session }
         state = .processing(.transcribing)
         await process(session)
     }
 
-    func discardUnsaved() async {
-        guard let session = unsaved, !isBusy else { return }
-        unsaved = nil
-        state = .idle
+    /// Works through Needs attention one recording at a time until the list is done or
+    /// the user cancels. Each recording still stops for participant review.
+    func processAll() async {
+        guard !isBusy else { return }
+        processingAll = true
+        defer { processingAll = false }
+        // Re-checked each turn: the user may cancel, or discard one still waiting.
+        for session in needsAttention where processingAll && needsAttention.contains(where: { $0 === session }) {
+            await retry(session)
+        }
+    }
+
+    func discard(_ session: RecordingSession) async {
+        guard needsAttention.contains(where: { $0 === session }) else { return }
+        needsAttention.removeAll { $0 === session }
+        if case .failed = state, !failedToStart { state = .idle }
+        // A cancelled run may still be reading these files.
         await finishUnwinding()
         session.deleteRecording()
+    }
+
+    private func setAside(_ session: RecordingSession) {
+        guard !needsAttention.contains(where: { $0 === session }) else { return }
+        needsAttention.append(session)
+        needsAttention.sort { $0.startedAt > $1.startedAt }
     }
 
     private func finishUnwinding() async {
@@ -205,6 +227,12 @@ final class RecordingController: ObservableObject {
         micCapture.stop()
         await systemCapture.stop()
         session.finishedAt = Date()
+        do {
+            try session.advance(to: .recorded)
+        } catch {
+            // The audio is still on disk; the next launch rebuilds the session from it.
+            NSLog("Couldn't record session progress: \(error)")
+        }
         await process(session)
     }
 
@@ -218,7 +246,7 @@ final class RecordingController: ObservableObject {
     }
 
     private func process(_ session: RecordingSession) async {
-        unsaved = session
+        inFlight = session
         failedToStart = false
         // The transcriber isn't safe to run twice at once, and a retry reads the same files.
         await finishUnwinding()
@@ -270,23 +298,32 @@ final class RecordingController: ObservableObject {
             guard !Task.isCancelled else { return }
             switch outcome {
             case .saved(let noteURL, let folder):
-                unsaved = nil
+                inFlight = nil
+                do {
+                    try session.advance(to: .noted)
+                } catch {
+                    NSLog("Couldn't mark session noted: \(error)")
+                }
                 history.add(session)
                 let warning = archiveOrDeleteAudio(for: session)
                 confirmSave(folder: folder, noteURL: noteURL, warning: warning)
                 state = .idle
             case .deleted:
-                unsaved = nil
+                inFlight = nil
                 session.deleteRecording()
                 state = .idle
             case .folderMissing:
+                inFlight = nil
+                setAside(session)
                 settings.revalidateFolders()
                 state = .failed("The notes folder is missing. Choose one, then try again.")
             }
         } catch {
             guard !Task.isCancelled else { return }
             NSLog("Processing failed: \(error)")
-            state = .failed("Couldn't finish processing this recording. The audio is still on your Mac.")
+            inFlight = nil
+            setAside(session)
+            state = .failed("Couldn't finish processing this recording. It's under Needs attention.")
         }
     }
 
