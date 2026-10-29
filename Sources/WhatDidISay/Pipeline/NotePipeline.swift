@@ -1,7 +1,8 @@
 import Foundation
 
 /// Turns a finished recording into a saved note. Owns the whole post-recording
-/// sequence — transcribe, review participants, summarize, render, write — behind a
+/// sequence — transcribe (or reuse a saved transcript), review participants,
+/// summarize, render, write — behind a
 /// single call, so the ordering, cancellation, and participant-fork logic live in one
 /// place and can be exercised through fakes at each seam.
 ///
@@ -41,19 +42,7 @@ struct NotePipeline {
         // Checked up front so the user can fix it and retry before minutes of transcription.
         guard let folder = input.outputFolder else { return .folderMissing }
 
-        let segments = try await transcript.build(
-            system: input.session.systemAudioURL,
-            mic: input.session.micAudioURL,
-            model: input.model,
-            diarize: input.diarize,
-            hints: input.detectedParticipants
-        ) { phase in
-            switch phase {
-            case .transcribing: onStage(.transcribing)
-            case .identifyingSpeakers: onStage(.identifyingSpeakers)
-            }
-        }
-        try Task.checkCancellation()
+        let segments = try await transcribe(input, onStage: onStage)
 
         onStage(.reviewing)
         let review = RosterReview(
@@ -91,5 +80,33 @@ struct NotePipeline {
         onStage(.saving)
         session.noteURL = try writeNote(markdown, session.source, session.startedAt, folder)
         return .saved(noteURL: session.noteURL, folder: folder)
+    }
+
+    /// Transcription is the slow, crash-prone step, so its result is saved beside the
+    /// audio the moment it exists and reused by any later run of the same recording.
+    private func transcribe(_ input: Input, onStage: @MainActor (Stage) -> Void) async throws -> [TranscriptSegment] {
+        let session = input.session
+        if let saved = session.savedTranscript { return saved }
+
+        let segments = try await transcript.build(
+            system: session.systemAudioURL,
+            mic: session.micAudioURL,
+            model: input.model,
+            diarize: input.diarize,
+            hints: input.detectedParticipants
+        ) { phase in
+            switch phase {
+            case .transcribing: onStage(.transcribing)
+            case .identifyingSpeakers: onStage(.identifyingSpeakers)
+            }
+        }
+        try Task.checkCancellation()
+        do {
+            try session.saveTranscript(segments)
+        } catch {
+            // A safety net, not a step: the note can still be made without it.
+            NSLog("Couldn't save transcript: \(error)")
+        }
+        return segments
     }
 }

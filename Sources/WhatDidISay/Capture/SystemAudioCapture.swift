@@ -40,6 +40,9 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
         config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
 
         let writer = try AVAssetWriter(outputURL: url, fileType: .m4a)
+        // An unfragmented m4a has no index until `finishWriting`, so a crash mid-call
+        // would leave it unreadable. Fragments keep everything up to the last one playable.
+        writer.movieFragmentInterval = CMTime(seconds: 10, preferredTimescale: 600)
         let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: 48_000,

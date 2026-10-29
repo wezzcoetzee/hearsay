@@ -20,11 +20,7 @@ cp "$BIN_PATH" "$APP_DIR/Contents/MacOS/$APP_NAME"
 cp "$ROOT/Resources/Info.plist" "$APP_DIR/Contents/Info.plist"
 cp "$ROOT/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
 
-echo "▸ Signing (ad-hoc)…"
-codesign --force --sign - \
-    --options runtime \
-    --entitlements "$ROOT/Resources/WhatDidISay.entitlements" \
-    "$APP_DIR"
+"$ROOT/Scripts/sign.sh" "$APP_DIR"
 
 echo "✓ Built $APP_DIR"
 echo "  Run:  open \"$APP_DIR\""
