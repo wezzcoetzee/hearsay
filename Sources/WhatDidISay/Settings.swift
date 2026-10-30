@@ -208,3 +208,9 @@ enum SummaryBackend: String, CaseIterable {
         }
     }
 }
+
+#if DEBUG
+extension Settings {
+    func seedForScreenshots(outputFolder: String) { outputFolderPath = outputFolder }
+}
+#endif

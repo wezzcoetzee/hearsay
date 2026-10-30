@@ -89,3 +89,10 @@ private extension JSONDecoder {
         return decoder
     }
 }
+
+#if DEBUG
+extension RecordingHistory {
+    /// In memory only: never saved over the user's real history.
+    func seedForScreenshots(_ entries: [HistoryEntry]) { self.entries = entries }
+}
+#endif

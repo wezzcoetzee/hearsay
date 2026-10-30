@@ -205,3 +205,12 @@ final class AudioLevelMonitor: ObservableObject {
         max(peak, current - fallPerFrame)
     }
 }
+
+#if DEBUG
+extension AudioLevelMonitor {
+    func seedForScreenshots(mic: Float, system: Float) {
+        self.mic = mic
+        self.system = system
+    }
+}
+#endif

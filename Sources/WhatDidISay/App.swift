@@ -26,6 +26,14 @@ enum MenuBarIcon {
 struct WhatDidISayApp: App {
     @StateObject private var coordinator = AppCoordinator()
 
+    #if DEBUG
+    init() {
+        if let directory = ScreenshotRenderer.outputDirectory {
+            ScreenshotRenderer.run(into: directory)
+        }
+    }
+    #endif
+
     var body: some Scene {
         MenuBarExtra {
             MenuContent(recorder: coordinator.recorder,
