@@ -124,3 +124,12 @@ struct ConfirmationView: View {
         .frame(width: 360)
     }
 }
+
+#if DEBUG
+extension ConfirmationController {
+    func seedForScreenshots(source: RecordingSource, countdown: Int) {
+        pending = source
+        self.countdown = countdown
+    }
+}
+#endif

@@ -4,6 +4,13 @@ macOS menu-bar app that detects Slack huddles / Teams calls / Google Meet (in th
 
 See [DESIGN.md](DESIGN.md) for the full design and [PRODUCT.md](PRODUCT.md) for the product overview.
 
+<p>
+  <img src="screenshots/framed/mac/menu-recording.png" width="49%" alt="Recording a call">
+  <img src="screenshots/framed/mac/confirmation.png" width="49%" alt="Call detected prompt">
+  <img src="screenshots/framed/mac/review.png" width="49%" alt="Naming speakers">
+  <img src="screenshots/framed/mac/menu-history.png" width="49%" alt="Recent recordings">
+</p>
+
 ## Requirements
 
 - Apple Silicon, macOS 14+
@@ -39,6 +46,10 @@ Notes are written as `YYYY-MM-DD HHMM <Source>.md` with YAML frontmatter and a `
 
 In-person recordings have no second track to tell you apart from everyone else, so every voice in the room is diarized into `Speaker 1`, `Speaker 2`, … and the review dialog lets you name each one. Naming a voice relabels it throughout the transcript; voices you leave unnamed keep their label and stay out of the participant list.
 
+## Screenshots
+
+`screenshots/` holds App Store images: `raw/mac/` are the views themselves, `framed/mac/` are 2880×1800 marketing images. Debug builds render the real views with demo data via `-renderScreenshots <dir>`; regenerate everything with `./Scripts/screenshots.sh` (needs full Xcode, `jq`, a Chromium browser, and `COMPOSITE` pointing at the app-store-screenshots `composite.sh`).
+
 ## Layout
 
 ```
@@ -50,6 +61,7 @@ Sources/WhatDidISay/
 ├── Onboarding.swift               first-run setup flow
 ├── PermissionsManager.swift       microphone / screen-recording status
 ├── Keychain.swift                 secure storage for the Anthropic API key
+├── ScreenshotRenderer.swift       DEBUG: renders views with demo data for screenshots
 ├── ParticipantReview.swift        post-recording dialog: name each voice, confirm the roster
 ├── Capture/                       RecordingController, System/Mic capture, Session
 ├── Transcription/                 WhisperKit service, merge, segment model, Diarizer

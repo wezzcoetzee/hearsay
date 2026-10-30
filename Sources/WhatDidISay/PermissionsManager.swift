@@ -101,3 +101,12 @@ final class PermissionsManager: ObservableObject {
         }
     }
 }
+
+#if DEBUG
+extension PermissionsManager {
+    func seedForScreenshots() {
+        microphone = .granted
+        screenRecording = .granted
+    }
+}
+#endif

@@ -381,3 +381,13 @@ private extension NotePipeline.Stage {
         }
     }
 }
+
+#if DEBUG
+extension RecordingController {
+    /// Also hides recordings on disk that need attention: they are the user's, not demo data.
+    func seedForScreenshots(state: State) {
+        self.state = state
+        needsAttention = []
+    }
+}
+#endif
