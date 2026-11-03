@@ -3,6 +3,11 @@ import AVFoundation
 import ScreenCaptureKit
 
 final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
+    /// Called at most once per `start`, from any thread, when capture stops writing audio
+    /// unexpectedly (the stream died, or the file writer failed).
+    var onInterrupted: (@Sendable (Error) -> Void)?
+
+    private let reporter = InterruptionReporter()
     private var stream: SCStream?
     private var writer: AVAssetWriter?
     private var input: AVAssetWriterInput?
@@ -55,6 +60,7 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
         self.writer = writer
         self.input = input
         self.sessionStarted = false
+        reporter.arm(onInterrupted)
 
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
@@ -63,6 +69,7 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
     }
 
     func stop() async {
+        reporter.arm(nil)
         if let stream {
             try? await stream.stopCapture()
             self.stream = nil
@@ -96,11 +103,13 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
 
         guard let writer, let input else { return }
 
-        if writer.status == .unknown {
-            let start = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-            writer.startWriting()
-            writer.startSession(atSourceTime: start)
+        if writer.status == .unknown, writer.startWriting() {
+            writer.startSession(atSourceTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
             sessionStarted = true
+        }
+        if writer.status == .failed {
+            reporter.report(writer.error ?? CaptureError.writerFailed)
+            return
         }
 
         guard sessionStarted, writer.status == .writing, input.isReadyForMoreMediaData else { return }
@@ -109,16 +118,19 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         NSLog("SystemAudioCapture stopped with error: \(error.localizedDescription)")
+        reporter.report(error)
     }
 
     enum CaptureError: LocalizedError {
         case noDisplay
         case writerSetupFailed
+        case writerFailed
 
         var errorDescription: String? {
             switch self {
             case .noDisplay: return "No display available for system audio capture."
             case .writerSetupFailed: return "Could not set up the audio file writer."
+            case .writerFailed: return "The audio file writer failed."
             }
         }
     }

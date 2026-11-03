@@ -18,13 +18,20 @@ and architecture reviews.
 
 - **Transcript builder** — turns recorded tracks into one speaker-labelled transcript.
   Calls transcribe both tracks, optionally diarize the others track, then merge.
-  In-person meetings transcribe and diarize the microphone alone. (`TranscriptBuilder`)
+  In-person meetings transcribe and diarize the microphone alone. A failed diarization
+  degrades the transcript instead of failing it. (`TranscriptBuilder`)
 - **Summary** — turns transcript segments into a short markdown summary via a local (Ollama)
   or cloud (Anthropic) summarizer. Owns segment-to-text flattening, prompt, and backend
   selection. (`Summary`, behind the `Summarizer` seam)
 - **Note pipeline** — turns a finished recording session into a saved note. Owns the whole
   post-recording sequence — transcribe, review and name voices, summarize, render, write — and
   reports its stage and outcome. (`NotePipeline`)
+  The pipeline stops at the written note. `RecordingController` owns what follows a
+  save: marking the session `noted`, adding it to history, and archiving or deleting
+  the audio.
 - **Call presence detection** — decides when a call starts and ends across mic activity,
   output-stream activity, browser Meet tabs, and app termination. (`CallDetector`,
   `CallActivityMonitor`, `BrowserCallDetector`)
+- **Capture** — `MicCapture` and `SystemAudioCapture` write the tracks and report,
+  once per recording, if either stops writing mid-call (`onInterrupted`), which the
+  menu surfaces as a warning.

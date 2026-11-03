@@ -1,31 +1,41 @@
 import Foundation
 import Security
 
-enum Keychain {
-    private static let service = "com.wcoetzee.whatdidisay.keys"
+/// Generic-password storage under one keychain service. The app uses `.app`; anything
+/// else (tests, screenshots) passes its own service so it never reads the real key.
+struct Keychain {
+    let service: String
 
-    static func set(_ value: String, for account: String) {
+    static let app = Keychain(service: "com.wcoetzee.whatdidisay.keys")
+
+    /// Stores `value`, or deletes the item when it's empty. Returns whether the keychain
+    /// now holds what was asked for, so callers can keep a fallback copy when it doesn't.
+    @discardableResult
+    func set(_ value: String, for account: String) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
         guard !value.isEmpty else {
-            SecItemDelete(query as CFDictionary)
-            return
+            let status = SecItemDelete(query as CFDictionary)
+            return status == errSecSuccess || status == errSecItemNotFound
         }
         let data = Data(value.utf8)
-        if SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess {
-            SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        } else {
+        var status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound {
             var insert = query
             insert[kSecValueData as String] = data
             insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-            SecItemAdd(insert as CFDictionary, nil)
+            status = SecItemAdd(insert as CFDictionary, nil)
         }
+        if status != errSecSuccess {
+            NSLog("Keychain write failed: \(SecCopyErrorMessageString(status, nil) as String? ?? "\(status)")")
+        }
+        return status == errSecSuccess
     }
 
-    static func get(_ account: String) -> String? {
+    func get(_ account: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

@@ -9,7 +9,9 @@ enum LoginItem {
         SMAppService.mainApp.status == .enabled
     }
 
-    static func setEnabled(_ enabled: Bool) {
+    /// Returns whether the app is registered afterwards, which differs from what was
+    /// asked when macOS refuses (an unsigned build, or one outside Applications).
+    static func setEnabled(_ enabled: Bool) -> Bool {
         do {
             if enabled {
                 try SMAppService.mainApp.register()
@@ -19,5 +21,6 @@ enum LoginItem {
         } catch {
             log.error("Failed to \(enabled ? "register" : "unregister") login item: \(error.localizedDescription)")
         }
+        return isEnabled
     }
 }

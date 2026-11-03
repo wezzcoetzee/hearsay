@@ -7,7 +7,7 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                header
+                AppHeader { EmptyView() }
 
                 section("General") {
                     Toggle(isOn: $settings.launchAtLogin) {
@@ -128,20 +128,6 @@ struct SettingsView: View {
             Button("Use Cloud Summaries") { settings.hasAcknowledgedCloud = true }
         } message: {
             Text("With cloud summaries on, the finished transcript text of each call is sent to Anthropic to generate the summary. Your audio never leaves your Mac. Turn this off any time to keep everything on-device.")
-        }
-    }
-
-    private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "waveform")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 24, height: 24)
-                .background(Color.accentColor.opacity(0.15),
-                            in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .accessibilityHidden(true)
-            Text(AppInfo.displayName).font(.headline)
-            Spacer()
         }
     }
 

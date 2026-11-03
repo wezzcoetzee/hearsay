@@ -56,6 +56,9 @@ final class AppCoordinator: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] state in self?.controlPanel.update(for: state) }
             .store(in: &bag)
+        recorder.$captureWarning
+            .sink { [weak self] warning in self?.controlPanel.warning = warning }
+            .store(in: &bag)
 
         recorder.objectWillChange
             .sink { [weak self] in self?.objectWillChange.send() }

@@ -5,6 +5,38 @@ enum AppInfo {
     static let displayName = "What Did I Say"
 }
 
+/// The tinted waveform tile and app name that head the menu and Settings.
+struct AppHeader<Trailing: View>: View {
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "waveform")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 24, height: 24)
+                .background(Color.accentColor.opacity(0.15),
+                            in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .accessibilityHidden(true)
+            Text(AppInfo.displayName).font(.headline)
+            Spacer()
+            trailing
+        }
+    }
+}
+
+extension NotePipeline.Stage {
+    var title: String {
+        switch self {
+        case .transcribing: "Transcribing"
+        case .identifyingSpeakers: "Identifying speakers"
+        case .summarizing: "Summarizing"
+        case .reviewing: "Confirming participants"
+        case .saving: "Saving note"
+        }
+    }
+}
+
 enum MenuBarIcon {
     static func image(recording: Bool) -> NSImage {
         let symbolName = recording ? "record.circle.fill" : "waveform"
@@ -61,7 +93,8 @@ struct MenuContent: View {
     @ObservedObject var settings: Settings
     @ObservedObject var permissions: PermissionsManager
     @ObservedObject var history: RecordingHistory
-    @ObservedObject var levels: AudioLevelMonitor
+    /// Not observed here: only `RecordingStatus` redraws with the meters.
+    let levels: AudioLevelMonitor
     let onboarding: OnboardingController
 
     @State private var showConsentAlert = false
@@ -82,7 +115,7 @@ struct MenuContent: View {
             }
 
             if case .recording(let since) = recorder.state {
-                recordingTimer(since: since)
+                RecordingStatus(since: since, levels: levels, warning: recorder.captureWarning)
             }
 
             Divider()
@@ -111,7 +144,12 @@ struct MenuContent: View {
         }
         .alert("Quit before this call is a note?", isPresented: $confirmingQuit) {
             Button("Cancel", role: .cancel) {}
-            Button("Quit", role: .destructive) { NSApplication.shared.terminate(nil) }
+            Button("Quit", role: .destructive) {
+                Task {
+                    await recorder.finishForQuit()
+                    NSApplication.shared.terminate(nil)
+                }
+            }
         } message: {
             Text("Its audio is kept and shows under Needs attention when you reopen the app.")
         }
@@ -126,16 +164,7 @@ struct MenuContent: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "waveform")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 24, height: 24)
-                .background(Color.accentColor.opacity(0.15),
-                            in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .accessibilityHidden(true)
-            Text(AppInfo.displayName).font(.headline)
-            Spacer()
+        AppHeader {
             StatusBadge(state: recorder.state)
             Button {
                 if recorder.isBusy {
@@ -151,41 +180,6 @@ struct MenuContent: View {
             .help("Quit")
             .accessibilityLabel("Quit \(AppInfo.displayName)")
             .keyboardShortcut("q")
-        }
-    }
-
-    private func recordingTimer(since: Date) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            TimelineView(.periodic(from: since, by: 1)) { context in
-                let elapsed = Int(context.date.timeIntervalSince(since))
-                Label("Recording  \(ElapsedTime.clock(elapsed))", systemImage: "record.circle.fill")
-                    .font(.callout.weight(.medium)).foregroundStyle(.red).monospacedDigit()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityLabel("Recording, \(ElapsedTime.spoken(elapsed))")
-            }
-            meterRow("Microphone", symbol: "mic.fill", level: levels.mic, isSilent: levels.micSilent)
-            if levels.tracksSystemAudio {
-                meterRow("Call audio", symbol: "speaker.wave.2.fill", level: levels.system, isSilent: false)
-            }
-            if levels.micSilent {
-                Text("Nothing is reaching the microphone. Check it isn't muted and that the right input device is selected.")
-                    .font(.caption2).foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(.horizontal, 10).padding(.vertical, 8)
-        .background(.red.opacity(0.1),
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
-    private func meterRow(_ name: String, symbol: String, level: Float, isSilent: Bool) -> some View {
-        HStack(spacing: 8) {
-            ChannelMeter(symbol: symbol, name: "\(name) level",
-                         level: level, isSilent: isSilent, segments: 14)
-            Text(isSilent ? "no sound" : name)
-                .font(.caption2)
-                .foregroundStyle(isSilent ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
-            Spacer(minLength: 0)
         }
     }
 
@@ -238,7 +232,7 @@ struct MenuContent: View {
             progressRow("Saving audio", cancellable: false)
         }
         if case .processing(let stage) = recorder.state {
-            progressRow(stage.rawValue, cancellable: true, audioSaved: true)
+            progressRow(stage.title, cancellable: true, audioSaved: true)
         }
         if case .failed(let message) = recorder.state {
             failureRow(message)
@@ -371,7 +365,7 @@ struct MenuContent: View {
         if !history.entries.isEmpty {
             Divider()
             historySection
-        } else if permissions.allGranted && settings.hasOutputFolder {
+        } else if permissions.allGranted && settings.hasOutputFolder && recorder.needsAttention.isEmpty {
             Divider()
             VStack(spacing: 5) {
                 Image(systemName: "waveform.and.mic")
@@ -437,7 +431,7 @@ struct MenuContent: View {
                 Button(status == .unknown ? "Allow" : "Open Settings") {
                     Task { await permissions.request(pane) }
                 }
-                .font(.caption2)
+                .controlSize(.small)
             }
         }
     }
@@ -456,7 +450,7 @@ struct MenuContent: View {
         switch recorder.state {
         case .recording: return "Stop Recording"
         case .finishing: return "Saving…"
-        case .processing(let stage): return "\(stage.rawValue)…"
+        case .processing(let stage): return "\(stage.title)…"
         default: return "Start Recording"
         }
     }
@@ -483,44 +477,76 @@ struct MenuContent: View {
     }
 }
 
+/// The live part of the menu while recording: timer, meters, and the mic warning.
+/// Kept in its own view so the meters' fifteen updates a second redraw only this.
+private struct RecordingStatus: View {
+    let since: Date
+    @ObservedObject var levels: AudioLevelMonitor
+    let warning: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            TimelineView(.periodic(from: since, by: 1)) { context in
+                let elapsed = Int(context.date.timeIntervalSince(since))
+                Label("Recording  \(ElapsedTime.clock(elapsed))", systemImage: "record.circle.fill")
+                    .font(.callout.weight(.medium)).foregroundStyle(.red).monospacedDigit()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("Recording, \(ElapsedTime.spoken(elapsed))")
+            }
+            meterRow("Microphone", symbol: "mic.fill", level: levels.mic, isSilent: levels.micSilent)
+            if levels.tracksSystemAudio {
+                meterRow("Call audio", symbol: "speaker.wave.2.fill", level: levels.system, isSilent: false)
+            }
+            if let warning {
+                caution(warning)
+            } else if levels.micSilent {
+                caution("Nothing is reaching the microphone. Check it isn't muted and that the right input device is selected.")
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(.red.opacity(0.1),
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func caution(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2).foregroundStyle(.orange)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func meterRow(_ name: String, symbol: String, level: Float, isSilent: Bool) -> some View {
+        HStack(spacing: 8) {
+            ChannelMeter(symbol: symbol, name: "\(name) level",
+                         level: level, isSilent: isSilent, segments: 14)
+            Text(isSilent ? "no sound" : name)
+                .font(.caption2)
+                .foregroundStyle(isSilent ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+            Spacer(minLength: 0)
+        }
+    }
+}
+
 private struct PendingRow: View {
     let session: RecordingSession
     let canProcess: Bool
     let onProcess: () -> Void
     let onDiscard: () -> Void
 
-    @State private var hovering = false
-
     var body: some View {
-        HStack(spacing: 6) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(session.source.displayName).font(.caption.weight(.medium))
-                Text("\(session.startedAt.formatted(.dateTime.month().day().hour().minute())) · \(ElapsedTime.clock(Int(session.duration))) · \(status)")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-            iconButton("arrow.clockwise", help: "Make a note from this recording", action: onProcess)
+        ListRow(title: session.source.displayName,
+                subtitle: "\(session.startedAt.formatted(.dateTime.month().day().hour().minute())) · \(ElapsedTime.clock(Int(session.duration))) · \(status)") { hovering in
+            RowIconButton(symbol: "arrow.clockwise", help: "Make a note from this recording",
+                          label: "Make a note from this recording, \(session.source.displayName)",
+                          hovering: hovering, action: onProcess)
                 .disabled(!canProcess)
-            iconButton("trash", help: "Discard recording", action: onDiscard)
+            RowIconButton(symbol: "trash", help: "Discard recording",
+                          label: "Discard recording, \(session.source.displayName)",
+                          hovering: hovering, action: onDiscard)
         }
-        .padding(.horizontal, 8).padding(.vertical, 5)
-        .background(hovering ? Color.primary.opacity(0.07) : .clear,
-                    in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .onHover { hovering = $0 }
     }
 
     private var status: String {
         session.progress == .transcribed ? "transcript saved" : "audio only"
-    }
-
-    private func iconButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .foregroundStyle(hovering ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-        }
-        .buttonStyle(.borderless)
-        .help(help)
-        .accessibilityLabel("\(help), \(session.source.displayName)")
     }
 }
 
@@ -529,42 +555,61 @@ private struct HistoryRow: View {
     let onOpen: (URL) -> Void
     let onRemove: () -> Void
 
+    var body: some View {
+        ListRow(title: entry.source,
+                subtitle: entry.date.formatted(.dateTime.month().day().hour().minute())) { hovering in
+            // Notes can be moved or deleted in the vault; don't offer to open a ghost.
+            if let note = entry.noteURL, FileManager.default.fileExists(atPath: note.path) {
+                RowIconButton(symbol: "doc.text", help: "Open note",
+                              label: "Open note for \(entry.source)",
+                              hovering: hovering) { onOpen(note) }
+            }
+            RowIconButton(symbol: "xmark.circle", help: "Remove from list",
+                          label: "Remove \(entry.source) from list",
+                          hovering: hovering, action: onRemove)
+        }
+    }
+}
+
+/// A two-line menu row whose trailing buttons brighten while the pointer is over it.
+private struct ListRow<Actions: View>: View {
+    let title: String
+    let subtitle: String
+    @ViewBuilder let actions: (_ hovering: Bool) -> Actions
+
     @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 6) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(entry.source).font(.caption.weight(.medium))
-                Text(entry.date, format: .dateTime.month().day().hour().minute())
-                    .font(.caption2).foregroundStyle(.secondary)
+                Text(title).font(.caption.weight(.medium))
+                Text(subtitle).font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
-            // Notes can be moved or deleted in the vault; don't offer to open a ghost.
-            if let note = entry.noteURL, FileManager.default.fileExists(atPath: note.path) {
-                Button {
-                    onOpen(note)
-                } label: {
-                    Image(systemName: "doc.text")
-                        .foregroundStyle(hovering ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                }
-                .buttonStyle(.borderless)
-                .help("Open note")
-                .accessibilityLabel("Open note for \(entry.source)")
-            }
-            Button {
-                onRemove()
-            } label: {
-                Image(systemName: "xmark.circle")
-                    .foregroundStyle(hovering ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-            }
-            .buttonStyle(.borderless)
-            .help("Remove from list")
-            .accessibilityLabel("Remove \(entry.source) from list")
+            actions(hovering)
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
         .background(hovering ? Color.primary.opacity(0.07) : .clear,
                     in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         .onHover { hovering = $0 }
+    }
+}
+
+private struct RowIconButton: View {
+    let symbol: String
+    let help: String
+    let label: String
+    let hovering: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .foregroundStyle(hovering ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+        }
+        .buttonStyle(.borderless)
+        .help(help)
+        .accessibilityLabel(label)
     }
 }
 

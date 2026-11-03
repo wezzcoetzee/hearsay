@@ -4,17 +4,49 @@ protocol Summarizer: Sendable {
     func summarize(_ transcript: String) async throws -> String
 }
 
+/// What the summarizer gave back: the summary markdown, plus a short topic for the
+/// note's title and filename when the model offered one.
+struct NoteSummary: Equatable, Sendable {
+    var topic: String?
+    var markdown: String
+
+    private static let topicPrefix = "topic:"
+
+    /// Splits the model's `Topic: …` opening line from the summary below it. Models
+    /// sometimes bold the line or skip it, so both are tolerated.
+    init(parsing raw: String) {
+        var lines = raw.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines)
+        let first = lines.first?.trimmingCharacters(in: CharacterSet(charactersIn: "*_# ")) ?? ""
+        guard first.lowercased().hasPrefix(Self.topicPrefix) else {
+            self.init(topic: nil, markdown: raw.trimmingCharacters(in: .whitespacesAndNewlines))
+            return
+        }
+        lines.removeFirst()
+        let topic = first.dropFirst(Self.topicPrefix.count)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "*_\"'. ").union(.whitespaces))
+        self.init(
+            topic: topic.isEmpty ? nil : topic,
+            markdown: lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    init(topic: String?, markdown: String) {
+        self.topic = topic
+        self.markdown = markdown
+    }
+}
+
 enum Summary {
-    /// The summary markdown, or a one-line note explaining why there isn't one, so a
-    /// user who turned summaries on never finds them silently missing.
+    /// The summary, or a one-line note explaining why there isn't one, so a user who
+    /// turned summaries on never finds them silently missing.
     @MainActor
-    static func of(segments: [TranscriptSegment], settings: Settings) async -> String? {
+    static func of(segments: [TranscriptSegment], settings: Settings) async -> NoteSummary? {
         guard settings.summaryEnabled, !segments.isEmpty else { return nil }
         guard let summarizer = makeSummarizer(settings: settings) else {
             return unavailable("add an Anthropic API key in Settings")
         }
         do {
-            return try await summarizer.summarize(transcriptText(segments))
+            return NoteSummary(parsing: try await summarizer.summarize(transcriptText(segments)))
         } catch {
             if Task.isCancelled { return nil }
             NSLog("Summary failed: \(error)")
@@ -22,8 +54,8 @@ enum Summary {
         }
     }
 
-    static func unavailable(_ reason: String) -> String {
-        "_Summary unavailable: \(reason)._"
+    static func unavailable(_ reason: String) -> NoteSummary {
+        NoteSummary(topic: nil, markdown: "_Summary unavailable: \(reason)._")
     }
 
     static func transcriptText(_ segments: [TranscriptSegment]) -> String {
@@ -38,7 +70,8 @@ enum Summary {
         case .local:
             return OllamaSummarizer(model: settings.localSummaryModel)
         case .cloud:
-            let key = settings.anthropicAPIKey
+            // A pasted key often carries a trailing newline, which breaks the header.
+            let key = settings.anthropicAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !key.isEmpty else { return nil }
             return ClaudeSummarizer(apiKey: key)
         }
@@ -46,7 +79,8 @@ enum Summary {
 
     static func prompt(for transcript: String) -> String {
         """
-        You are summarizing the transcript of a meeting or call. Write a short \
+        You are summarizing the transcript of a meeting or call. Start with one line \
+        `Topic: <what the call was about in 2 to 6 words>`. Then write a short \
         summary as 2–4 markdown bullet points, then a section titled "## Action items" \
         listing concrete follow-ups as markdown checkboxes (`- [ ]`). If there are no \
         action items, write "_None._" under that heading. Output only the markdown, no preamble.
@@ -61,7 +95,19 @@ struct OllamaSummarizer: Summarizer {
     let model: String
     private let endpoint = URL(string: "http://localhost:11434/api/generate")!
 
+    private static let charactersPerToken = 3.5
+    private static let answerTokens = 2_048
+    private static let contextRange = 4_096...32_768
+
+    /// Ollama silently cuts a prompt that overflows its context window (a few thousand
+    /// tokens by default), so the window is sized to the prompt plus room for the answer.
+    static func contextLength(forPrompt prompt: String) -> Int {
+        let promptTokens = Int((Double(prompt.count) / charactersPerToken).rounded(.up))
+        return min(max(promptTokens + answerTokens, contextRange.lowerBound), contextRange.upperBound)
+    }
+
     func summarize(_ transcript: String) async throws -> String {
+        let prompt = Summary.prompt(for: transcript)
         var request = URLRequest(url: endpoint)
         // Local models on a long call can take minutes; the 60s default gives up early.
         request.timeoutInterval = 600
@@ -69,8 +115,9 @@ struct OllamaSummarizer: Summarizer {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "model": model,
-            "prompt": Summary.prompt(for: transcript),
-            "stream": false
+            "prompt": prompt,
+            "stream": false,
+            "options": ["num_ctx": Self.contextLength(forPrompt: prompt)]
         ])
 
         let data: Data
@@ -78,16 +125,26 @@ struct OllamaSummarizer: Summarizer {
         do {
             (data, response) = try await URLSession.shared.data(for: request)
         } catch let error as URLError where error.code != .cancelled {
-            throw SummaryError.backendUnavailable("Ollama isn't reachable on localhost:11434")
+            throw SummaryError.backendUnavailable(error.code == .timedOut
+                ? "Ollama timed out before finishing the summary"
+                : "Ollama isn't reachable on localhost:11434")
         }
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        return try Self.parse(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0, model: model)
+    }
+
+    static func parse(_ data: Data, status: Int, model: String) throws -> String {
+        guard status == 200 else {
             throw SummaryError.backendUnavailable(status == 404
                 ? "Ollama has no model named \(model). Run `ollama pull \(model)`"
                 : "Ollama returned \(status)")
         }
-        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        return (object?["response"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        struct Reply: Decodable { let response: String }
+        guard let reply = try? JSONDecoder().decode(Reply.self, from: data) else {
+            throw SummaryError.backendUnavailable("Ollama sent a reply that couldn't be read")
+        }
+        let text = reply.response.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { throw SummaryError.backendUnavailable("Ollama returned an empty response") }
+        return text
     }
 }
 
@@ -117,19 +174,48 @@ struct ClaudeSummarizer: Summarizer {
         guard let http = response as? HTTPURLResponse else {
             throw SummaryError.backendUnavailable("No response from Anthropic API")
         }
-        guard http.statusCode == 200 else {
-            throw SummaryError.backendUnavailable("Anthropic API returned \(http.statusCode)")
+        return try Self.parse(data, status: http.statusCode)
+    }
+
+    static func parse(_ data: Data, status: Int) throws -> String {
+        struct ErrorReply: Decodable {
+            struct Detail: Decodable { let message: String }
+            let error: Detail
         }
-        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        if object?["stop_reason"] as? String == "refusal" {
+        guard status == 200 else {
+            let detail = (try? JSONDecoder().decode(ErrorReply.self, from: data))?.error.message
+            throw SummaryError.backendUnavailable(
+                ["Anthropic API returned \(status)", detail].compactMap { $0 }.joined(separator: ": "))
+        }
+
+        struct Reply: Decodable {
+            struct Block: Decodable {
+                let type: String
+                let text: String?
+            }
+            let stopReason: String?
+            let content: [Block]
+        }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let reply = try? decoder.decode(Reply.self, from: data) else {
+            throw SummaryError.backendUnavailable("Anthropic sent a reply that couldn't be read")
+        }
+        switch reply.stopReason {
+        case "refusal":
             throw SummaryError.backendUnavailable("Anthropic declined to summarize this transcript")
+        case "max_tokens":
+            throw SummaryError.backendUnavailable("Claude ran out of output tokens before finishing the summary")
+        default:
+            break
         }
-        let blocks = object?["content"] as? [[String: Any]] ?? []
-        let text = blocks
-            .filter { $0["type"] as? String == "text" }
-            .compactMap { $0["text"] as? String }
+        let text = reply.content
+            .filter { $0.type == "text" }
+            .compactMap(\.text)
             .joined()
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { throw SummaryError.backendUnavailable("Claude replied without any text") }
+        return text
     }
 }
 

@@ -140,14 +140,16 @@ final class AudioLevelSink: @unchecked Sendable {
 }
 
 /// Publishes what the two capture streams are hearing right now: a smoothed
-/// 0...1 level per channel, plus whether a channel has gone quiet for long
-/// enough to be worth flagging.
+/// 0...1 level per channel, plus whether the mic has gone quiet for long enough to be
+/// worth flagging. Call audio isn't flagged: a quiet far end is normal.
+///
+/// Values are only republished when they change, so a silent channel doesn't redraw
+/// the meters fifteen times a second for the whole call.
 @MainActor
 final class AudioLevelMonitor: ObservableObject {
     @Published private(set) var mic: Float = 0
     @Published private(set) var system: Float = 0
     @Published private(set) var micSilent = false
-    @Published private(set) var systemSilent = false
     /// False while recording a source with no system track, so the UI can drop the
     /// meter rather than show one that will never move.
     @Published private(set) var tracksSystemAudio = true
@@ -159,18 +161,15 @@ final class AudioLevelMonitor: ObservableObject {
     private let frameInterval = Duration.milliseconds(66)
 
     private var micSilence = SilenceTracker()
-    private var systemSilence = SilenceTracker()
     private var pump: Task<Void, Never>?
 
-    func start(systemAudio: Bool = true) {
+    func start(systemAudio: Bool) {
         stop()
         tracksSystemAudio = systemAudio
-        sink.reset()
-        micSilence.reset()
-        systemSilence.reset()
+        let interval = frameInterval
         pump = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: self?.frameInterval ?? .milliseconds(66))
+                try? await Task.sleep(for: interval)
                 guard !Task.isCancelled else { return }
                 self?.tick(now: Date())
             }
@@ -181,24 +180,23 @@ final class AudioLevelMonitor: ObservableObject {
         pump?.cancel()
         pump = nil
         sink.reset()
-        mic = 0
-        system = 0
-        micSilent = false
-        systemSilent = false
-        tracksSystemAudio = true
         micSilence.reset()
-        systemSilence.reset()
+        update(\.mic, to: 0)
+        update(\.system, to: 0)
+        update(\.micSilent, to: false)
+        update(\.tracksSystemAudio, to: true)
     }
 
     func tick(now: Date) {
         let peaks = sink.drain()
-        mic = smoothed(from: mic, toward: peaks.mic)
-        system = smoothed(from: system, toward: peaks.system)
-
         micSilence.record(level: peaks.mic, at: now)
-        systemSilence.record(level: peaks.system, at: now)
-        micSilent = micSilence.isSilent(at: now)
-        systemSilent = systemSilence.isSilent(at: now)
+        update(\.mic, to: smoothed(from: mic, toward: peaks.mic))
+        update(\.system, to: smoothed(from: system, toward: peaks.system))
+        update(\.micSilent, to: micSilence.isSilent(at: now))
+    }
+
+    private func update<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<AudioLevelMonitor, Value>, to value: Value) {
+        if self[keyPath: keyPath] != value { self[keyPath: keyPath] = value }
     }
 
     private func smoothed(from current: Float, toward peak: Float) -> Float {
@@ -208,9 +206,12 @@ final class AudioLevelMonitor: ObservableObject {
 
 #if DEBUG
 extension AudioLevelMonitor {
-    func seedForScreenshots(mic: Float, system: Float) {
+    /// Fixed meter readings for the screenshot catalog. Debug builds only.
+    func stageForScreenshots(mic: Float, system: Float, micSilent: Bool = false, tracksSystemAudio: Bool = true) {
         self.mic = mic
         self.system = system
+        self.micSilent = micSilent
+        self.tracksSystemAudio = tracksSystemAudio
     }
 }
 #endif

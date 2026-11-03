@@ -8,9 +8,10 @@ import Testing
     private func metadata(
         source: RecordingSource = .slack,
         duration: TimeInterval = 125,
-        participants: [String] = []
+        participants: [String] = [],
+        topic: String? = nil
     ) -> NoteMetadata {
-        NoteMetadata(date: date, source: source, duration: duration, participants: participants)
+        NoteMetadata(date: date, source: source, duration: duration, participants: participants, topic: topic)
     }
 
     private func seg(_ start: Double, _ text: String, _ speaker: Speaker) -> TranscriptSegment {
@@ -50,6 +51,18 @@ import Testing
         #expect(out.contains("# Teams Call — "))
     }
 
+    @Test func topicTitlesTheNoteAndLandsInFrontMatter() {
+        let out = MarkdownWriter.render(segments: [], metadata: metadata(topic: "Weekly goals"), summary: nil)
+        #expect(out.contains("source: \"Slack Huddle\"\ntopic: \"Weekly goals\"\nparticipants:"))
+        #expect(out.contains("# Weekly goals — "))
+    }
+
+    @Test func fileNameIsDateSourceTopic() {
+        let stamp = MarkdownWriter.fileTimestamp(date)
+        #expect(MarkdownWriter.fileName(metadata()) == "\(stamp) Slack Huddle")
+        #expect(MarkdownWriter.fileName(metadata(topic: "Q3: plan / review.")) == "\(stamp) Slack Huddle - Q3 plan review")
+    }
+
     @Test func durationRoundsToWholeMinutes() {
         let out = MarkdownWriter.render(segments: [], metadata: metadata(duration: 125), summary: nil)
         #expect(out.contains("duration: 2m"))
@@ -76,6 +89,29 @@ import Testing
             summary: nil
         )
         #expect(out.contains(#"participants: ["A \"B\" C"]"#))
+    }
+
+    @Test func topicWithColonAndQuotesIsEscapedInFrontMatter() {
+        let out = MarkdownWriter.render(
+            segments: [],
+            metadata: metadata(topic: #"Q3: the "big" plan"#),
+            summary: nil
+        )
+        #expect(out.contains(#"topic: "Q3: the \"big\" plan""#))
+    }
+
+    @Test func writingTwiceKeepsBothNotes() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MarkdownWriterTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let first = try MarkdownWriter.write("one", metadata: metadata(), to: folder)
+        let second = try MarkdownWriter.write("two", metadata: metadata(), to: folder)
+
+        #expect(second.lastPathComponent == first.deletingPathExtension().lastPathComponent + " (2).md")
+        #expect(try String(contentsOf: first, encoding: .utf8) == "one")
+        #expect(try String(contentsOf: second, encoding: .utf8) == "two")
     }
 
     @Test func frontMatterIsDelimited() {

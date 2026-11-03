@@ -4,8 +4,12 @@ import Combine
 
 @MainActor
 final class RecordingControlPanelController: ObservableObject {
-    @Published var isMinimized = false
+    @Published private(set) var isMinimized = false
+    /// When the current recording started; `nil` while nothing is recording.
     @Published private(set) var since: Date?
+    /// The recorder's capture warning, shown here because the panel is what the user
+    /// is looking at mid-call.
+    @Published var warning: String?
 
     var onStop: (() -> Void)?
 
@@ -15,7 +19,6 @@ final class RecordingControlPanelController: ObservableObject {
 
     let levels: AudioLevelMonitor
 
-    private var recordingSince: Date?
     private var panel: NSPanel?
 
     init(levels: AudioLevelMonitor) {
@@ -24,77 +27,70 @@ final class RecordingControlPanelController: ObservableObject {
 
     func update(for state: RecordingController.State) {
         if case .recording(let since) = state {
-            recordingSince = since
+            self.since = since
         } else {
-            recordingSince = nil
+            since = nil
         }
         reconcile()
     }
 
     private func reconcile() {
-        if let recordingSince, isEnabled {
-            show(since: recordingSince)
+        if since != nil, isEnabled {
+            show()
         } else {
             hide()
         }
     }
 
-    private func show(since: Date) {
-        self.since = since
+    private func show() {
         if let panel {
-            resize(panel)
             panel.orderFrontRegardless()
             return
         }
-
-        let view = RecordingControlPanelView(controller: self)
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: Self.expandedSize.width, height: Self.expandedSize.height),
-            styleMask: [.nonactivatingPanel, .fullSizeContentView, .borderless],
-            backing: .buffered,
-            defer: false
-        )
-        panel.isMovableByWindowBackground = true
-        panel.level = .floating
-        panel.hidesOnDeactivate = false
+        let hosting = NSHostingView(rootView: RecordingControlPanelView(controller: self))
+        // The panel owns its size so it can animate between the two layouts.
+        hosting.sizingOptions = []
+        let panel = NSPanel.floating(contentView: hosting, size: size, styleMask: [.borderless])
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = NSHostingView(rootView: view)
-
-        if let screen = NSScreen.main {
-            let frame = screen.visibleFrame
-            let size = panel.frame.size
-            panel.setFrameOrigin(NSPoint(
-                x: frame.maxX - size.width - 24,
-                y: frame.maxY - size.height - 24
-            ))
-        }
         panel.orderFrontRegardless()
         self.panel = panel
     }
 
     private func hide() {
-        since = nil
         panel?.orderOut(nil)
         panel = nil
     }
 
+    /// Cross-fades the layouts while the window resizes on the same curve. The corner
+    /// nearest the screen edge stays put, so a panel parked top-right stays flush.
     func toggleMinimized() {
-        isMinimized.toggle()
-        if let panel { resize(panel) }
+        let animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        withAnimation(animates ? .easeInOut(duration: Self.resizeDuration) : nil) {
+            isMinimized.toggle()
+        }
+        guard let panel else { return }
+
+        let current = panel.frame
+        let screen = panel.screen?.visibleFrame ?? current
+        let pinsRight = current.midX > screen.midX
+        let target = NSRect(x: pinsRight ? current.maxX - size.width : current.minX,
+                            y: current.maxY - size.height,
+                            width: size.width, height: size.height)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = animates ? Self.resizeDuration : 0
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(target, display: true)
+        } completionHandler: { [weak self] in
+            // The shadow follows the content's shape, which only settles at the end.
+            MainActor.assumeIsolated { self?.panel?.invalidateShadow() }
+        }
     }
 
-    private func resize(_ panel: NSPanel) {
-        let target = isMinimized ? Self.minimizedSize : Self.expandedSize
-        let topLeft = NSPoint(x: panel.frame.minX, y: panel.frame.maxY)
-        var frame = panel.frame
-        frame.size = target
-        frame.origin = NSPoint(x: topLeft.x, y: topLeft.y - target.height)
-        panel.setFrame(frame, display: true, animate: true)
-    }
+    private var size: NSSize { isMinimized ? Self.minimizedSize : Self.expandedSize }
 
+    private static let resizeDuration = 0.2
     static let expandedSize = NSSize(width: 252, height: 92)
     static let minimizedSize = NSSize(width: 160, height: 40)
 }
@@ -108,29 +104,33 @@ struct RecordingControlPanelView: View {
         self.levels = controller.levels
     }
 
+    private let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+
     var body: some View {
-        Group {
+        // Fills the window rather than sizing to the content, so the material and
+        // border resize with the panel and the two layouts can overlap mid-fade.
+        ZStack(alignment: .topLeading) {
             if controller.isMinimized {
-                minimized
+                minimized.transition(.opacity)
             } else {
-                expanded
+                expanded.transition(.opacity)
             }
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.white.opacity(0.08))
-        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(.regularMaterial, in: shape)
+        .overlay(shape.strokeBorder(.white.opacity(0.08)))
+        .clipShape(shape)
     }
 
     private var expanded: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                RecordingDot(level: levels.mic)
+                RecordingDot()
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(levels.micSilent ? "No mic input" : "Recording")
+                    Text(status)
                         .font(.caption)
-                        .foregroundStyle(levels.micSilent ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(isHealthy ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+                        .help(controller.warning ?? "")
                     timer.font(.title3).monospacedDigit().foregroundStyle(.primary)
                 }
                 Spacer(minLength: 4)
@@ -177,7 +177,7 @@ struct RecordingControlPanelView: View {
             controller.toggleMinimized()
         } label: {
             HStack(spacing: 8) {
-                RecordingDot(level: levels.mic)
+                RecordingDot()
                 timer.font(.callout).monospacedDigit().foregroundStyle(.primary)
                 LevelMeter(level: max(levels.mic, levels.system), segments: 5, height: 10)
                 Spacer(minLength: 0)
@@ -191,6 +191,13 @@ struct RecordingControlPanelView: View {
         .buttonStyle(.plain)
         .help("Expand recording controls")
         .accessibilityLabel("Expand recording controls")
+    }
+
+    private var isHealthy: Bool { controller.warning == nil && !levels.micSilent }
+
+    private var status: String {
+        if controller.warning != nil { return "Audio interrupted" }
+        return levels.micSilent ? "No mic input" : "Recording"
     }
 
     @ViewBuilder
@@ -207,19 +214,13 @@ struct RecordingControlPanelView: View {
     }
 }
 
-/// Grows with the mic level. Deliberately no idle pulse: a forever-repeating animation
-/// repaints every frame for the whole call, and the live timer already shows it's running.
+/// Deliberately still: anything that moves for the whole call repaints the panel the
+/// whole call. The ticking timer and the meters already show it's live.
 private struct RecordingDot: View {
-    let level: Float
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     var body: some View {
         Circle()
             .fill(.red)
             .frame(width: 10, height: 10)
-            .scaleEffect(reduceMotion ? 1 : 1 + CGFloat(level) * 0.4)
-            .animation(.linear(duration: 0.08), value: level)
             .accessibilityHidden(true)
     }
 }

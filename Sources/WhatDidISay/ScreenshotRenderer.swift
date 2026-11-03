@@ -33,15 +33,15 @@ enum ScreenshotRenderer {
         // `MenuContent` refreshes permissions as it appears, so seed them after.
         let reseed = { permissions.seedForScreenshots() }
 
-        recorder.seedForScreenshots(state: .recording(since: Date().addingTimeInterval(-1_394)))
-        recorder.levels.seedForScreenshots(mic: 0.62, system: 0.81)
+        recorder.stageForScreenshots(.recording(since: Date().addingTimeInterval(-1_394)))
+        recorder.levels.stageForScreenshots(mic: 0.62, system: 0.81)
         render(menu(), name: "menu-recording", into: directory, before: reseed)
 
-        recorder.seedForScreenshots(state: .idle)
+        recorder.stageForScreenshots(.idle)
         render(menu(), name: "menu-history", into: directory, before: reseed)
 
         let confirmation = ConfirmationController()
-        confirmation.seedForScreenshots(source: .slack, countdown: 12)
+        confirmation.stageForScreenshots(source: .slack, countdown: 12, cloudActive: false)
         render(ConfirmationView(controller: confirmation).frame(width: 360), name: "confirmation", into: directory)
 
         render(ParticipantReviewView(request: demoRoster, onDone: { _ in }, onDelete: {}).frame(width: 380),

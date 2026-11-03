@@ -61,77 +61,72 @@ final class ParticipantReviewController: NSObject, NSWindowDelegate {
     }
 }
 
-/// One line per voice heard, plus anyone who was there without speaking. Naming a
-/// voice relabels it throughout the transcript; leaving it blank keeps the label.
+/// One line per voice heard, then names read off the call window, then anyone added
+/// by hand. Naming a voice relabels it throughout the transcript; leaving it blank keeps
+/// the label. Removing a voice folds its lines into a neighbouring voice, for when
+/// diarization split one person in two.
 struct ParticipantReviewView: View {
     /// Rows are removable, so they need a stable identity; indexing a shrinking array
     /// from a `ForEach` binding crashes when the last row goes.
     private struct Attendee: Identifiable {
         let id = UUID()
         var name: String
+        var included = true
     }
 
     private let voices: [VoiceCandidate]
     @State private var names: [String]
-    @State private var others: [Attendee]
+    @State private var mergedInto: [Int: Int] = [:]
+    @State private var detected: [Attendee]
+    @State private var added: [Attendee] = []
     @State private var newName = ""
     @State private var confirmingDelete = false
     private let onDone: (ReviewedRoster) -> Void
     private let onDelete: () -> Void
+    private let accessibilityTrusted: Bool
 
-    init(request: RosterReview, onDone: @escaping (ReviewedRoster) -> Void, onDelete: @escaping () -> Void) {
+    init(request: RosterReview, accessibilityTrusted: Bool = AXIsProcessTrusted(),
+         onDone: @escaping (ReviewedRoster) -> Void, onDelete: @escaping () -> Void) {
         self.voices = request.voices
+        self.accessibilityTrusted = accessibilityTrusted
         _names = State(initialValue: request.voices.map(\.suggestion))
-        _others = State(initialValue: request.others.map { Attendee(name: $0) })
+        _detected = State(initialValue: request.others.map { Attendee(name: $0, included: false) })
         self.onDone = onDone
         self.onDelete = onDelete
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Who was talking?")
-                    .font(.headline)
-                Text("Voices you don't name keep their label in the note.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(20)
+            Text("Who was talking?")
+                .font(.headline)
+                .padding(20)
 
             Divider()
 
             ScrollView {
-                VStack(spacing: 6) {
-                    ForEach(voices.indices, id: \.self) { index in
-                        HStack(spacing: 8) {
-                            Text(voices[index].label)
-                                .font(.caption).foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .frame(width: 76, alignment: .leading)
-                                .help(voices[index].sample)
-                                .accessibilityHidden(true)
-                            // Labelled on the field itself: combining the row would hide
-                            // the text field from VoiceOver.
-                            TextField("Name", text: $names[index])
-                                .textFieldStyle(.roundedBorder)
-                                .accessibilityLabel("Name for \(voices[index].label)")
-                                .accessibilityHint("Said: \(voices[index].sample)")
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(voices.indices, id: \.self, content: voiceRow)
+
+                    if !detected.isEmpty {
+                        Divider().padding(.vertical, 4)
+                        Text("Seen on screen, not heard. Tick anyone who was there.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        ForEach($detected) { $attendee in
+                            Toggle(attendee.name, isOn: $attendee.included)
+                                .toggleStyle(.checkbox)
+                                .foregroundStyle(attendee.included ? .primary : .secondary)
                         }
                     }
 
-                    if !others.isEmpty {
+                    if !added.isEmpty {
                         Divider().padding(.vertical, 4)
-                        ForEach($others) { $attendee in
+                        ForEach($added) { $attendee in
                             HStack(spacing: 8) {
                                 TextField("Name", text: $attendee.name)
                                     .textFieldStyle(.roundedBorder)
-                                Button {
-                                    others.removeAll { $0.id == attendee.id }
-                                } label: {
-                                    Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+                                removeButton(attendee.name.isEmpty ? "Remove participant" : "Remove \(attendee.name)") {
+                                    added.removeAll { $0.id == attendee.id }
                                 }
-                                .buttonStyle(.borderless)
-                                .accessibilityLabel(attendee.name.isEmpty ? "Remove participant" : "Remove \(attendee.name)")
                             }
                         }
                     }
@@ -141,7 +136,7 @@ struct ParticipantReviewView: View {
             }
 
             HStack {
-                TextField("Someone who didn't speak", text: $newName)
+                TextField("Add someone who didn't speak", text: $newName)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(addName)
                 Button("Add", action: addName)
@@ -150,7 +145,7 @@ struct ParticipantReviewView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 12)
 
-            if !AXIsProcessTrusted() {
+            if !accessibilityTrusted {
                 HStack(spacing: 6) {
                     Image(systemName: "info.circle").foregroundStyle(.secondary)
                     Text("Enable Accessibility for better name detection.")
@@ -195,20 +190,72 @@ struct ParticipantReviewView: View {
         .frame(width: 380, height: 460)
     }
 
+    @ViewBuilder
+    private func voiceRow(_ index: Int) -> some View {
+        let voice = voices[index]
+        HStack(spacing: 8) {
+            Text(voice.label)
+                .font(.caption).foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(width: 76, alignment: .leading)
+                .accessibilityHidden(true)
+            if let target = mergedInto[index] {
+                Text("Lines moved to \(displayName(target))")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Undo") { mergedInto[index] = nil }
+                    .buttonStyle(.link).font(.caption)
+            } else {
+                // Labelled on the field itself: combining the row would hide the text
+                // field from VoiceOver.
+                TextField("Name", text: $names[index])
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Name for \(voice.label)")
+                    .accessibilityHint("Said: \(voice.sample)")
+                if let target = RosterReview.mergeTarget(for: index, in: voices, merged: Set(mergedInto.keys)) {
+                    removeButton("Same person as \(displayName(target))") { mergedInto[index] = target }
+                        .help("Same person as \(displayName(target))")
+                }
+            }
+        }
+        if voice.label != Speaker.me.label, mergedInto[index] == nil {
+            Text("\u{201C}\(voice.sample)\u{201D}")
+                .font(.caption).italic().foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.tail)
+                .padding(.leading, 84)
+                .padding(.bottom, 4)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private func removeButton(_ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(label)
+    }
+
+    /// What a voice is called right now, following merges, as shown in the dialog.
+    private func displayName(_ index: Int) -> String {
+        let name = RosterReview.reviewed(voices, names: names, mergedInto: mergedInto)[index].name
+        return name.isEmpty ? voices[index].label : name
+    }
+
     private func addName() {
         let trimmed = newName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
-        others.append(Attendee(name: trimmed))
+        added.append(Attendee(name: trimmed))
         newName = ""
     }
 
     private func save() {
-        let reviewed = zip(voices, names).map {
-            ReviewedVoice(label: $0.label, name: $1.trimmingCharacters(in: .whitespaces))
-        }
-        let present = others
+        let present = (detected.filter(\.included) + added)
             .map { $0.name.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
-        onDone(ReviewedRoster(voices: reviewed, others: present))
+        onDone(ReviewedRoster(
+            voices: RosterReview.reviewed(voices, names: names, mergedInto: mergedInto),
+            others: present
+        ))
     }
 }

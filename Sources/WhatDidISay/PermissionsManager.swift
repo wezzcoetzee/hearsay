@@ -26,8 +26,17 @@ final class PermissionsManager: ObservableObject {
         }
     }
 
+    /// Reads what macOS currently allows. Screenshots swap in fixed answers.
+    typealias Probe = @MainActor () -> (microphone: Status, screenRecording: Status)
+
     @Published private(set) var microphone: Status = .unknown
     @Published private(set) var screenRecording: Status = .unknown
+
+    private let probe: Probe
+
+    init(probe: @escaping Probe = PermissionsManager.systemStatus) {
+        self.probe = probe
+    }
 
     var allGranted: Bool { microphone.isGranted && screenRecording.isGranted }
 
@@ -36,14 +45,8 @@ final class PermissionsManager: ObservableObject {
         microphone.isGranted && (!source.usesSystemAudio || screenRecording.isGranted)
     }
 
-    func requestAll() async {
-        await requestMicrophone()
-        await requestScreenRecording()
-    }
-
     func refresh() {
-        microphone = Self.microphoneStatus()
-        screenRecording = CGPreflightScreenCaptureAccess() ? .granted : .denied
+        (microphone, screenRecording) = probe()
     }
 
     /// Asks macOS first, because an app that has never asked isn't listed in System
@@ -93,12 +96,13 @@ final class PermissionsManager: ObservableObject {
         }
     }
 
-    private static func microphoneStatus() -> Status {
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized: return .granted
-        case .notDetermined: return .unknown
-        default: return .denied
+    static func systemStatus() -> (microphone: Status, screenRecording: Status) {
+        let microphone: Status = switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized: .granted
+        case .notDetermined: .unknown
+        default: .denied
         }
+        return (microphone, CGPreflightScreenCaptureAccess() ? .granted : .denied)
     }
 }
 

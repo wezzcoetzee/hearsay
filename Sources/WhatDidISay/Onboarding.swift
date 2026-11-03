@@ -66,13 +66,25 @@ final class OnboardingController: ObservableObject {
 }
 
 struct OnboardingView: View {
+    enum Step: Int, CaseIterable {
+        case welcome, microphone, screenRecording, vault, audio, done
+    }
+
     @ObservedObject var permissions: PermissionsManager
     @ObservedObject var settings: Settings
     var onClose: () -> Void
     var onRelaunch: () -> Void
 
-    @State private var step = 0
-    private let lastStep = 5
+    @State private var step: Step
+
+    init(permissions: PermissionsManager, settings: Settings, startingAt step: Step = .welcome,
+         onClose: @escaping () -> Void, onRelaunch: @escaping () -> Void) {
+        self.permissions = permissions
+        self.settings = settings
+        self.onClose = onClose
+        self.onRelaunch = onRelaunch
+        _step = State(initialValue: step)
+    }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -120,23 +132,23 @@ struct OnboardingView: View {
     @ViewBuilder
     private var content: some View {
         switch step {
-        case 0: welcomeStep
-        case 1: permissionStep(
+        case .welcome: welcomeStep
+        case .microphone: permissionStep(
             icon: "mic.fill",
             title: "Microphone",
             why: "Captures your side of the conversation so your words appear in the transcript.",
             status: permissions.microphone,
             action: { await permissions.request(.microphone) })
-        case 2: permissionStep(
+        case .screenRecording: permissionStep(
             icon: "rectangle.inset.filled.and.person.filled",
             title: "Screen Recording",
             why: "macOS routes system audio through the Screen Recording permission. It's how the app captures everyone else on the call. No video is ever recorded.",
             status: permissions.screenRecording,
             note: "After you allow it, the app must be relaunched for macOS to apply the change.",
             action: { await permissions.request(.screenRecording) })
-        case 3: vaultStep
-        case 4: audioStep
-        default: doneStep
+        case .vault: vaultStep
+        case .audio: audioStep
+        case .done: doneStep
         }
     }
 
@@ -205,23 +217,7 @@ struct OnboardingView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()
-            if let name = settings.outputFolderName {
-                HStack {
-                    Label(name, systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .lineLimit(1).truncationMode(.middle)
-                    Spacer()
-                    Button("Change") { settings.chooseOutputFolder() }
-                }
-            } else {
-                Button {
-                    settings.chooseOutputFolder()
-                } label: {
-                    Text("Choose Folder").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-            }
+            folderChoice(settings.outputFolderName, choose: settings.chooseOutputFolder)
         }
     }
 
@@ -246,23 +242,7 @@ struct OnboardingView: View {
                     Spacer()
                     statusPill(settings.audioFolderPath != nil ? .granted : .denied, granted: "Set", pending: "Not set")
                 }
-                if let name = settings.audioFolderName {
-                    HStack {
-                        Label(name, systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                            .lineLimit(1).truncationMode(.middle)
-                        Spacer()
-                        Button("Change") { settings.chooseAudioFolder() }
-                    }
-                } else {
-                    Button {
-                        settings.chooseAudioFolder()
-                    } label: {
-                        Text("Choose Folder").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                }
+                folderChoice(settings.audioFolderName, choose: settings.chooseAudioFolder)
                 VStack(alignment: .leading, spacing: 6) {
                     TextField("Filename format", text: $settings.audioFilenameFormat)
                         .textFieldStyle(.roundedBorder)
@@ -304,19 +284,43 @@ struct OnboardingView: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// The chosen folder with a way to change it, or one prominent button to pick one.
+    @ViewBuilder
+    private func folderChoice(_ name: String?, choose: @escaping () -> Void) -> some View {
+        if let name {
+            HStack {
+                Label(name, systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer()
+                Button("Change", action: choose)
+            }
+        } else {
+            Button(action: choose) {
+                Text("Choose Folder").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+    }
+
+    private func move(by offset: Int) {
+        if let next = Step(rawValue: step.rawValue + offset) { step = next }
+    }
+
     private var footer: some View {
         HStack {
-            if step > 0 {
-                Button("Back") { step -= 1 }
+            if step != .welcome {
+                Button("Back") { move(by: -1) }
             }
             Spacer()
             stepDots
             Spacer()
-            if step < lastStep {
-                Button(step == 0 ? "Get Started" : "Continue") { step += 1 }
+            if step != .done {
+                Button(step == .welcome ? "Get Started" : "Continue") { move(by: 1) }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(step == 1 && permissions.microphone != .granted)
+                    .disabled(step == .microphone && permissions.microphone != .granted)
             } else {
                 Button("Done", action: onClose)
                     .buttonStyle(.borderedProminent)
@@ -328,14 +332,14 @@ struct OnboardingView: View {
 
     private var stepDots: some View {
         HStack(spacing: 6) {
-            ForEach(0...lastStep, id: \.self) { index in
+            ForEach(Step.allCases, id: \.self) { dot in
                 Circle()
-                    .fill(index == step ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
+                    .fill(dot == step ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
                     .frame(width: 6, height: 6)
             }
         }
         .accessibilityElement()
-        .accessibilityLabel("Step \(step + 1) of \(lastStep + 1)")
+        .accessibilityLabel("Step \(step.rawValue + 1) of \(Step.allCases.count)")
     }
 
     private func statusPill(_ status: PermissionsManager.Status,

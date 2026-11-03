@@ -45,7 +45,7 @@ final class Settings: ObservableObject {
     }
 
     @Published var anthropicAPIKey: String {
-        didSet { Keychain.set(anthropicAPIKey, for: Keys.anthropicAPIKey) }
+        didSet { keychain.set(anthropicAPIKey, for: Keys.anthropicAPIKey) }
     }
 
     @Published var diarize: Bool {
@@ -53,7 +53,11 @@ final class Settings: ObservableObject {
     }
 
     @Published var launchAtLogin: Bool {
-        didSet { LoginItem.setEnabled(launchAtLogin) }
+        didSet {
+            // macOS can refuse; show what actually happened rather than what was asked.
+            let registered = LoginItem.setEnabled(launchAtLogin)
+            if registered != launchAtLogin { launchAtLogin = registered }
+        }
     }
 
     @Published var hasAcknowledgedConsent: Bool {
@@ -95,9 +99,14 @@ final class Settings: ObservableObject {
         audioFolderPath.map { ($0 as NSString).lastPathComponent }
     }
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
+    private let keychain: Keychain
 
-    init() {
+    /// Tests and screenshots pass their own stores so they never read or write the
+    /// user's real preferences or API key.
+    init(defaults: UserDefaults = .standard, keychain: Keychain = .app) {
+        self.defaults = defaults
+        self.keychain = keychain
         self.model = defaults.string(forKey: Keys.model) ?? "small"
         self.summaryEnabled = defaults.bool(forKey: Keys.summaryEnabled)
         self.summaryBackend = SummaryBackend(rawValue: defaults.string(forKey: Keys.summaryBackend) ?? "") ?? .local
@@ -112,11 +121,13 @@ final class Settings: ObservableObject {
         self.hasAcknowledgedCloud = defaults.bool(forKey: Keys.acknowledgedCloud)
 
         if let legacyKey = defaults.string(forKey: Keys.anthropicAPIKey), !legacyKey.isEmpty {
-            Keychain.set(legacyKey, for: Keys.anthropicAPIKey)
-            defaults.removeObject(forKey: Keys.anthropicAPIKey)
+            // Only drop the old copy once the keychain has it, or the key is lost.
+            if keychain.set(legacyKey, for: Keys.anthropicAPIKey) {
+                defaults.removeObject(forKey: Keys.anthropicAPIKey)
+            }
             self.anthropicAPIKey = legacyKey
         } else {
-            self.anthropicAPIKey = Keychain.get(Keys.anthropicAPIKey) ?? ""
+            self.anthropicAPIKey = keychain.get(Keys.anthropicAPIKey) ?? ""
         }
 
         self.outputFolderPath = resolveOutputFolder()?.path
@@ -139,19 +150,25 @@ final class Settings: ObservableObject {
     }
 
     func chooseOutputFolder() {
-        if let url = chooseFolder(prompt: "Choose Vault Folder",
-                                  message: "Pick the folder (or Obsidian vault) where notes will be saved.",
-                                  bookmarkKey: Keys.outputBookmark) {
-            outputFolderPath = url.path
+        if let url = pickFolder(prompt: "Choose Vault Folder",
+                                message: "Pick the folder (or Obsidian vault) where notes will be saved.") {
+            useOutputFolder(url)
         }
     }
 
     func chooseAudioFolder() {
-        if let url = chooseFolder(prompt: "Choose Audio Folder",
-                                  message: "Pick the folder where call audio will be kept.",
-                                  bookmarkKey: Keys.audioBookmark) {
-            audioFolderPath = url.path
+        if let url = pickFolder(prompt: "Choose Audio Folder",
+                                message: "Pick the folder where call audio will be kept.") {
+            useAudioFolder(url)
         }
+    }
+
+    func useOutputFolder(_ url: URL) {
+        if storeBookmark(for: url, key: Keys.outputBookmark) { outputFolderPath = url.path }
+    }
+
+    func useAudioFolder(_ url: URL) {
+        if storeBookmark(for: url, key: Keys.audioBookmark) { audioFolderPath = url.path }
     }
 
     private func resolveFolder(bookmarkKey: String) -> URL? {
@@ -174,26 +191,25 @@ final class Settings: ObservableObject {
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
-        guard let data = try? url.bookmarkData(options: [.withSecurityScope],
-                                               includingResourceValuesForKeys: nil,
-                                               relativeTo: nil) else { return }
-        defaults.set(data, forKey: key)
+        _ = storeBookmark(for: url, key: key)
     }
 
-    private func chooseFolder(prompt: String, message: String, bookmarkKey: String) -> URL? {
+    private func pickFolder(prompt: String, message: String) -> URL? {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.prompt = prompt
         panel.message = message
+        return panel.runModal() == .OK ? panel.url : nil
+    }
 
-        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+    private func storeBookmark(for url: URL, key: String) -> Bool {
         guard let data = try? url.bookmarkData(options: [.withSecurityScope],
                                                includingResourceValuesForKeys: nil,
-                                               relativeTo: nil) else { return nil }
-        defaults.set(data, forKey: bookmarkKey)
-        return url
+                                               relativeTo: nil) else { return false }
+        defaults.set(data, forKey: key)
+        return true
     }
 }
 

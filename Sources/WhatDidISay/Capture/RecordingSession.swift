@@ -81,9 +81,8 @@ final class RecordingSession {
 
     let directory: URL
 
-    convenience init(source: RecordingSource, in folder: URL = recordingsFolder) {
+    convenience init(source: RecordingSource, startedAt: Date = Date(), in folder: URL = recordingsFolder) {
         let id = UUID()
-        let startedAt = Date()
         self.init(id: id, source: source, startedAt: startedAt, progress: .recording,
                   directory: folder.appendingPathComponent(Self.folderName(for: startedAt, id: id), isDirectory: true))
     }
@@ -196,9 +195,6 @@ final class RecordingSession {
     }
 
     private static func folderDateFormatter() -> DateFormatter {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        fmt.locale = Locale(identifier: "en_US_POSIX")
-        return fmt
+        .posix("yyyy-MM-dd_HH-mm-ss")
     }
 }
