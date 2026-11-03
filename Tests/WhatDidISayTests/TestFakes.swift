@@ -11,9 +11,11 @@ final class FakeTranscriber: Transcribing, @unchecked Sendable {
         self.mine = mine
     }
 
+    /// Like the real transcriber, labels every segment with the speaker it was asked for,
+    /// so a test sees whichever speaker the builder requested.
     func transcribe(url: URL, speaker: Speaker, model: String, hints: [String]) async throws -> [TranscriptSegment] {
         receivedHints = hints
-        return speaker == .others ? others : mine
+        return (speaker == .others ? others : mine).map { $0.relabeled(speaker) }
     }
 }
 

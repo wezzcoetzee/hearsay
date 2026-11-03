@@ -8,16 +8,8 @@ final class RecordingController: ObservableObject {
         case idle
         case recording(since: Date)
         case finishing
-        case processing(Stage)
+        case processing(NotePipeline.Stage)
         case failed(String)
-
-        enum Stage: String {
-            case transcribing = "Transcribing"
-            case identifyingSpeakers = "Identifying speakers"
-            case summarizing = "Summarizing"
-            case reviewing = "Confirming participants"
-            case saving = "Saving note"
-        }
     }
 
     struct SaveConfirmation: Equatable {
@@ -41,6 +33,9 @@ final class RecordingController: ObservableObject {
     /// True when the latest failure was a start, so the menu offers to retry the start
     /// rather than point at a recording.
     @Published private(set) var failedToStart = false
+    /// Set when a track stops writing mid-call (device unplugged, permission revoked),
+    /// so the user can restart rather than find half a call in the note later.
+    @Published private(set) var captureWarning: String?
     private var saveClearTask: Task<Void, Never>?
     private var processingTask: Task<Void, Never>?
     /// A cancelled run still unwinding (Whisper only notices cancellation between
@@ -52,8 +47,9 @@ final class RecordingController: ObservableObject {
 
     let settings: Settings
     let permissions: PermissionsManager
-    let history = RecordingHistory()
+    let history: RecordingHistory
     let levels = AudioLevelMonitor()
+    private let recordingsFolder: URL
 
     private let systemCapture: SystemAudioCapture
     private let micCapture: MicCapture
@@ -71,19 +67,28 @@ final class RecordingController: ObservableObject {
     /// or `nil` when the user chooses to delete the call.
     var confirmRoster: ((RosterReview) async -> ReviewedRoster?)?
 
-    init(settings: Settings, permissions: PermissionsManager) {
+    init(settings: Settings, permissions: PermissionsManager,
+         history: RecordingHistory = RecordingHistory(),
+         recordingsFolder: URL = RecordingSession.recordingsFolder) {
         self.settings = settings
         self.permissions = permissions
+        self.history = history
+        self.recordingsFolder = recordingsFolder
         self.systemCapture = SystemAudioCapture(levels: levels.sink)
         self.micCapture = MicCapture(levels: levels.sink)
+        micCapture.onInterrupted = reportInterruption(
+            "The microphone stopped recording, so the rest of what you say may be missing. Stop and start again to recover.")
+        systemCapture.onInterrupted = reportInterruption(
+            "Call audio stopped recording, so the rest of the call may be missing. Stop and start again to recover.")
         activityMonitor.onEnded = { [weak self] in
             Task { await self?.stop() }
         }
-        needsAttention = RecordingSession.unfinished(notedPaths: Set(history.entries.compactMap(\.recordingPath)))
+        needsAttention = RecordingSession.unfinished(in: recordingsFolder,
+                                                     notedPaths: Set(history.entries.compactMap(\.recordingPath)))
     }
 
-    private func bundleID(for source: RecordingSource) -> String? {
-        if source == .googleMeet, let host = browserDetector.meetBrowserBundleID() {
+    private func bundleID(for source: RecordingSource) async -> String? {
+        if source == .googleMeet, let host = await browserDetector.meetBrowserBundleID() {
             return host
         }
         let running = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier })
@@ -137,8 +142,8 @@ final class RecordingController: ObservableObject {
             return
         }
 
-        let session = RecordingSession(source: source)
-        let target = bundleID(for: source)
+        let session = RecordingSession(source: source, in: recordingsFolder)
+        let target = await bundleID(for: source)
         do {
             try session.advance(to: .recording)
             if let systemAudioURL = session.systemAudioURL {
@@ -146,6 +151,7 @@ final class RecordingController: ObservableObject {
             }
             try micCapture.start(writingTo: session.micAudioURL)
             failedToStart = false
+            captureWarning = nil
             current = session
             currentTarget = target
             participantAccumulator = ParticipantAccumulator()
@@ -236,12 +242,13 @@ final class RecordingController: ObservableObject {
         await process(session)
     }
 
-    /// Auto-detection saw a call end, either because the mic went quiet (`nil`) or an
-    /// app quit. Only a recording of that call stops: manual and in-person recordings
-    /// have no target app, so quitting Slack or a browser leaves them running.
+    /// Auto-detection saw a call app quit. Only a recording of that call stops: manual
+    /// and in-person recordings have no target app, so quitting Slack or a browser
+    /// leaves them running. A quiet mic (`nil`) is ignored: while recording, our own
+    /// engine holds the mic, so it only goes quiet when that engine fails, and the
+    /// user has already been warned to restart.
     func endDetectedCall(app bundleID: String?) async {
-        guard current != nil, let target = currentTarget else { return }
-        guard bundleID == nil || bundleID == target else { return }
+        guard current != nil, let bundleID, bundleID == currentTarget else { return }
         await stop()
     }
 
@@ -250,7 +257,9 @@ final class RecordingController: ObservableObject {
         failedToStart = false
         // The transcriber isn't safe to run twice at once, and a retry reads the same files.
         await finishUnwinding()
-        guard isProcessing || state == .finishing else { return }  // cancelled while waiting
+        // Cancelled while waiting. Checking `inFlight` too stops a retry that was
+        // cancelled and superseded from running alongside the newer one.
+        guard inFlight === session, isProcessing || state == .finishing else { return }
         let task = Task { [weak self] in
             guard let self else { return }
             await self.transcribeAndWrite(session)
@@ -293,7 +302,7 @@ final class RecordingController: ObservableObject {
         do {
             let outcome = try await pipeline.run(input) { [weak self] stage in
                 guard !Task.isCancelled else { return }
-                self?.state = .processing(stage.recordingStage)
+                self?.state = .processing(stage)
             }
             guard !Task.isCancelled else { return }
             switch outcome {
@@ -359,6 +368,34 @@ final class RecordingController: ObservableObject {
         }
     }
 
+    private func reportInterruption(_ warning: String) -> @Sendable (Error) -> Void {
+        { [weak self] error in
+            NSLog("Capture interrupted: \(error)")
+            Task { @MainActor in
+                guard let self, self.isRecording else { return }
+                self.captureWarning = warning
+            }
+        }
+    }
+
+    /// Closes the audio of a call still being recorded, so quitting mid-call leaves
+    /// intact files that show under Needs attention on the next launch. Processing is
+    /// left for then: the quit shouldn't wait on a transcription.
+    func finishForQuit() async {
+        guard let session = current else { return }
+        // Cleared before the first await, as in `stop()`, so a Stop arriving
+        // mid-teardown can't finalize the same files a second time.
+        current = nil
+        session.detectedParticipants = participantAccumulator.resolved()
+        await teardown()
+        session.finishedAt = Date()
+        do {
+            try session.advance(to: .recorded)
+        } catch {
+            NSLog("Couldn't record session progress before quitting: \(error)")
+        }
+    }
+
     private func teardown() async {
         detectionTask?.cancel()
         detectionTask = nil
@@ -370,24 +407,22 @@ final class RecordingController: ObservableObject {
     }
 }
 
-private extension NotePipeline.Stage {
-    var recordingStage: RecordingController.State.Stage {
-        switch self {
-        case .transcribing: .transcribing
-        case .identifyingSpeakers: .identifyingSpeakers
-        case .summarizing: .summarizing
-        case .reviewing: .reviewing
-        case .saving: .saving
-        }
-    }
-}
-
 #if DEBUG
 extension RecordingController {
-    /// Also hides recordings on disk that need attention: they are the user's, not demo data.
-    func seedForScreenshots(state: State) {
+    /// Puts the menu into a given state for the screenshot catalog without touching
+    /// audio hardware. Debug builds only.
+    func stageForScreenshots(_ state: State,
+                             lastSave: SaveConfirmation? = nil,
+                             needsAttention: [RecordingSession] = [],
+                             failedToStart: Bool = false,
+                             lastSource: RecordingSource = .manual,
+                             captureWarning: String? = nil) {
         self.state = state
-        needsAttention = []
+        self.lastSave = lastSave
+        self.needsAttention = needsAttention
+        self.failedToStart = failedToStart
+        self.lastSource = lastSource
+        self.captureWarning = captureWarning
     }
 }
 #endif

@@ -16,20 +16,8 @@ enum AudioArchiver {
                 date: session.startedAt,
                 source: session.source,
                 track: track)
-            let destination = uniqueURL(base: name, ext: source.pathExtension, in: folder)
+            let destination = FileNaming.uniqueURL(base: name, ext: source.pathExtension, in: folder)
             try fm.copyItem(at: source, to: destination)
-        }
-    }
-
-    private static func uniqueURL(base: String, ext: String, in folder: URL) -> URL {
-        let candidate = folder.appendingPathComponent("\(base).\(ext)")
-        guard FileManager.default.fileExists(atPath: candidate.path) else { return candidate }
-
-        var suffix = 2
-        while true {
-            let next = folder.appendingPathComponent("\(base) (\(suffix)).\(ext)")
-            if !FileManager.default.fileExists(atPath: next.path) { return next }
-            suffix += 1
         }
     }
 }

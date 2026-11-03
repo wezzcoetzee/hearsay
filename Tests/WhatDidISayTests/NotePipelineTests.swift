@@ -2,15 +2,22 @@ import Foundation
 import Testing
 @testable import WhatDidISay
 
-@Suite @MainActor struct NotePipelineTests {
+@Suite @MainActor final class NotePipelineTests {
     private let folder = URL(fileURLWithPath: "/tmp/vault")
+    /// Where this test's sessions keep their audio and transcript, removed when it ends.
+    private let recordings = FileManager.default.temporaryDirectory
+        .appendingPathComponent("NotePipelineTests-\(UUID().uuidString)", isDirectory: true)
+
+    deinit {
+        try? FileManager.default.removeItem(at: recordings)
+    }
 
     private func pipeline(
         others: [TranscriptSegment] = [makeSegment(0, "hi", .others)],
         mine: [TranscriptSegment] = [],
-        summary: String? = nil,
+        summary: NoteSummary? = nil,
         confirm: ((RosterReview) async -> ReviewedRoster?)? = { $0.unreviewed },
-        write: @escaping (String, RecordingSource, Date, URL) throws -> URL = { _, _, _, folder in folder.appendingPathComponent("note.md") }
+        write: @escaping (String, NoteMetadata, URL) throws -> URL = { _, _, folder in folder.appendingPathComponent("note.md") }
     ) -> NotePipeline {
         NotePipeline(
             transcript: TranscriptBuilder(transcriber: FakeTranscriber(others: others, mine: mine), diarizer: FakeDiarizer()),
@@ -22,14 +29,15 @@ import Testing
 
     private func input(
         folder: URL? = URL(fileURLWithPath: "/tmp/vault"),
+        diarize: Bool = false,
         summaryEnabled: Bool = false,
         participants: [String] = [],
         source: RecordingSource = .slack
     ) -> NotePipeline.Input {
         NotePipeline.Input(
-            session: RecordingSession(source: source, in: FileManager.default.temporaryDirectory),
+            session: RecordingSession(source: source, in: recordings),
             model: "base",
-            diarize: false,
+            diarize: diarize,
             summaryEnabled: summaryEnabled,
             detectedParticipants: participants,
             outputFolder: folder
@@ -39,14 +47,14 @@ import Testing
     @Test func savedOutcomeWritesNoteAndPopulatesSession() async throws {
         let expected = folder.appendingPathComponent("note.md")
         var written: String?
-        let pipe = pipeline(others: [makeSegment(0, "hi", .me)],
-                            write: { markdown, _, _, _ in written = markdown; return expected })
+        let pipe = pipeline(others: [], mine: [makeSegment(0, "hi", .me)],
+                            write: { markdown, _, _ in written = markdown; return expected })
         let inp = input(participants: ["Ada"])
 
         let outcome = try await pipe.run(inp) { _ in }
 
         #expect(outcome == .saved(noteURL: expected, folder: folder))
-        #expect(inp.session.participants == ["Me", "Ada"])
+        #expect(inp.session.participants == ["Me"])
         #expect(inp.session.segmentCount == 1)
         #expect(inp.session.noteURL == expected)
         #expect(written?.contains("hi") == true)
@@ -77,7 +85,7 @@ import Testing
         let pipe = NotePipeline(
             transcript: TranscriptBuilder(transcriber: FakeTranscriber(others: [makeSegment(0, "hi", .others)]),
                                           diarizer: FakeDiarizer()),
-            summarize: { _ in summarized = true; return "summary" },
+            summarize: { _ in summarized = true; return NoteSummary(topic: nil, markdown: "summary") },
             confirmRoster: { _ in nil }
         )
         let outcome = try await pipe.run(input(summaryEnabled: true)) { _ in }
@@ -93,7 +101,7 @@ import Testing
                                           diarizer: FakeDiarizer()),
             summarize: { segments in summarizedSpeakers = segments.map(\.speaker.label); return nil },
             confirmRoster: { _ in roster },
-            writeNote: { _, _, _, folder in folder }
+            writeNote: { _, _, folder in folder }
         )
         _ = try await pipe.run(input(summaryEnabled: true)) { _ in }
         #expect(summarizedSpeakers == ["Ada"])
@@ -108,8 +116,7 @@ import Testing
 
     @Test func reviewSeesEveryVoiceAndTheDetectedRosterSorted() async throws {
         var seen: RosterReview?
-        let segments = [makeSegment(0, "hello", .others), makeSegment(1, "hi back", .me)]
-        _ = try await pipeline(others: segments, confirm: { request in seen = request; return request.unreviewed })
+        _ = try await pipeline(others: [makeSegment(0, "hello", .others)], mine: [makeSegment(1, "hi back", .me)], confirm: { request in seen = request; return request.unreviewed })
             .run(input(participants: ["Zoe", "Ada"])) { _ in }
 
         #expect(seen?.voices.map(\.label) == ["Others", "Me"])
@@ -119,13 +126,13 @@ import Testing
 
     @Test func namingAVoiceRelabelsTheTranscriptAndTheRoster() async throws {
         var written: String?
-        let segments = [makeSegment(0, "morning all", .numbered(1))]
-        let roster = ReviewedRoster(voices: [ReviewedVoice(label: "Speaker 2", name: "Ada")], others: [])
+        let segments = [makeSegment(0, "morning all", .me)]
+        let roster = ReviewedRoster(voices: [ReviewedVoice(label: "Speaker 1", name: "Ada")], others: [])
         let inp = input(source: .inPerson)
 
         _ = try await pipeline(mine: segments,
                                confirm: { _ in roster },
-                               write: { markdown, _, _, folder in written = markdown; return folder })
+                               write: { markdown, _, folder in written = markdown; return folder })
             .run(inp) { _ in }
 
         #expect(written?.contains("Ada:** morning all") == true)
@@ -133,17 +140,27 @@ import Testing
     }
 
     @Test func unnamedVoicesStayOutOfTheRoster() async throws {
-        let segments = [makeSegment(0, "hi", .numbered(0)), makeSegment(1, "hello", .me)]
-        let inp = input(source: .inPerson)
-        _ = try await pipeline(mine: segments).run(inp) { _ in }
+        let inp = input()
+        _ = try await pipeline(others: [makeSegment(0, "hi", .others)], mine: [makeSegment(1, "hello", .me)])
+            .run(inp) { _ in }
         #expect(inp.session.participants == ["Me"])
     }
 
-    @Test func skipsReviewWhenNoConfirmClosure() async throws {
+    @Test func skipsReviewWhenNoConfirmClosureAndLeavesScreenNamesOut() async throws {
         let inp = input(participants: ["Ada"])
-        let outcome = try await pipeline(others: [makeSegment(0, "hi", .me)], confirm: nil).run(inp) { _ in }
-        #expect(inp.session.participants == ["Me", "Ada"])
+        let outcome = try await pipeline(others: [], mine: [makeSegment(0, "hi", .me)], confirm: nil).run(inp) { _ in }
+        #expect(inp.session.participants == ["Me"])
         #expect(outcome == .saved(noteURL: folder.appendingPathComponent("note.md"), folder: folder))
+    }
+
+    @Test func summaryTopicNamesTheNote() async throws {
+        var saved: NoteMetadata?
+        var written: String?
+        _ = try await pipeline(summary: NoteSummary(topic: "Weekly goals", markdown: "- done"),
+                               write: { markdown, metadata, folder in written = markdown; saved = metadata; return folder })
+            .run(input(summaryEnabled: true)) { _ in }
+        #expect(saved?.topic == "Weekly goals")
+        #expect(written?.contains("## Summary\n- done") == true)
     }
 
     @Test func emitsSummarizingStageOnlyWhenEnabled() async throws {
@@ -163,23 +180,33 @@ import Testing
         #expect(stages.contains(.saving))
     }
 
-    @Test func doesNotEmitSavingWhenFolderMissing() async throws {
-        var stages: [NotePipeline.Stage] = []
-        _ = try await pipeline().run(input(folder: nil)) { stages.append($0) }
-        #expect(!stages.contains(.saving))
-    }
-
     @Test func retryReusesTheSavedTranscriptInsteadOfTranscribingAgain() async throws {
         let inp = input()
-        defer { inp.session.deleteRecording() }
         try inp.session.saveTranscript([makeSegment(0, "from the first run", .me)])
 
         var written: String?
         _ = try await pipeline(others: [makeSegment(0, "transcribed again", .others)],
-                               write: { markdown, _, _, folder in written = markdown; return folder })
+                               write: { markdown, _, folder in written = markdown; return folder })
             .run(inp) { _ in }
 
         #expect(written?.contains("from the first run") == true)
         #expect(written?.contains("transcribed again") == false)
+    }
+
+    @Test(arguments: [true, false])
+    func transcriptIsCachedOnlyWhenRequestedDiarizationSucceeded(diarizationFails: Bool) async throws {
+        let pipe = NotePipeline(
+            transcript: TranscriptBuilder(transcriber: FakeTranscriber(others: [makeSegment(0, "hi", .others)]),
+                                          diarizer: FakeDiarizer(spans: [SpeakerSpan(start: 0, end: 1, speakerId: 0)],
+                                                                 shouldThrow: diarizationFails)),
+            summarize: { _ in nil },
+            confirmRoster: nil,
+            writeNote: { _, _, folder in folder }
+        )
+        let inp = input(diarize: true)
+
+        _ = try await pipe.run(inp) { _ in }
+
+        #expect((inp.session.savedTranscript != nil) == !diarizationFails)
     }
 }

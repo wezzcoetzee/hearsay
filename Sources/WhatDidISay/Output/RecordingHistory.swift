@@ -9,14 +9,7 @@ struct HistoryEntry: Codable, Identifiable {
     let recordingPath: String?
     let segmentCount: Int
 
-    var noteURL: URL? { notePath.map { URL(fileURLToPath: $0) } }
-    var recordingURL: URL? { recordingPath.map { URL(fileURLToPath: $0) } }
-}
-
-private extension URL {
-    init(fileURLToPath path: String) {
-        self.init(fileURLWithPath: path)
-    }
+    var noteURL: URL? { notePath.map { URL(fileURLWithPath: $0) } }
 }
 
 @MainActor
@@ -26,11 +19,12 @@ final class RecordingHistory: ObservableObject {
     private let fileURL: URL
     private let maxEntries = 20
 
-    init() {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("WhatDidISay", isDirectory: true)
-        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        self.fileURL = base.appendingPathComponent("history.json")
+    static let defaultFileURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("WhatDidISay/history.json")
+
+    init(fileURL: URL = RecordingHistory.defaultFileURL) {
+        self.fileURL = fileURL
+        try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         load()
     }
 
@@ -65,12 +59,23 @@ final class RecordingHistory: ObservableObject {
 
     private func load() {
         guard let data = try? Data(contentsOf: fileURL) else { return }
-        entries = (try? JSONDecoder.iso.decode([HistoryEntry].self, from: data)) ?? []
+        do {
+            entries = try JSONDecoder.iso.decode([HistoryEntry].self, from: data)
+        } catch {
+            // Starting empty would let the next save overwrite whatever this file held.
+            NSLog("History is unreadable, moving it aside: \(error)")
+            let stamp = Int(Date().timeIntervalSince1970)
+            let aside = fileURL.deletingLastPathComponent().appendingPathComponent("history.corrupt-\(stamp).json")
+            try? FileManager.default.moveItem(at: fileURL, to: aside)
+        }
     }
 
     private func save() {
-        guard let data = try? JSONEncoder.iso.encode(entries) else { return }
-        try? data.write(to: fileURL)
+        do {
+            try JSONEncoder.iso.encode(entries).write(to: fileURL, options: .atomic)
+        } catch {
+            NSLog("Couldn't save history: \(error)")
+        }
     }
 }
 

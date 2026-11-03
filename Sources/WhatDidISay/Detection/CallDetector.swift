@@ -1,15 +1,15 @@
 import Foundation
 import CoreAudio
 import AppKit
-import Combine
 
 @MainActor
-final class CallDetector: ObservableObject {
-    @Published private(set) var micActive = false
-
+final class CallDetector {
     var onDetect: ((RecordingSource) -> Void)?
     /// A call looks over: the bundle id of the call app that quit, or `nil` when the
-    /// mic went quiet.
+    /// mic went quiet. While we record, our own mic engine keeps the input device
+    /// running, so `nil` only fires when no recording holds the mic: it can withdraw a
+    /// pending prompt but never ends a recording. Recordings end on the app quitting
+    /// or `CallActivityMonitor` seeing the call's audio stop.
     var onEnd: ((String?) -> Void)?
 
     private let browserDetector = BrowserCallDetector()
@@ -18,6 +18,8 @@ final class CallDetector: ObservableObject {
     private var runningListener: AudioObjectPropertyListenerBlock?
     private var deviceListener: AudioObjectPropertyListenerBlock?
     private var coldStopTask: Task<Void, Never>?
+    private var detectTask: Task<Void, Never>?
+    private var micActive = false
     private var isRunning = false
 
     private var terminationObserver: NSObjectProtocol?
@@ -40,6 +42,8 @@ final class CallDetector: ObservableObject {
         removeTerminationObserver()
         coldStopTask?.cancel()
         coldStopTask = nil
+        detectTask?.cancel()
+        detectTask = nil
     }
 
     private func installTerminationObserver() {
@@ -73,10 +77,15 @@ final class CallDetector: ObservableObject {
         if active {
             coldStopTask?.cancel()
             coldStopTask = nil
-            if let source = detectTargetSource() {
-                onDetect?(source)
+            detectTask?.cancel()
+            // The Meet check is slow; a mic that goes quiet meanwhile cancels the task.
+            detectTask = Task { [weak self] in
+                guard let self, let source = await self.detectTargetSource(), !Task.isCancelled else { return }
+                self.onDetect?(source)
             }
         } else {
+            detectTask?.cancel()
+            detectTask = nil
             scheduleColdStop()
         }
     }
@@ -90,18 +99,40 @@ final class CallDetector: ObservableObject {
         }
     }
 
-    private func detectTargetSource() -> RecordingSource? {
-        if let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
-           let match = RecordingSource.source(forBundleID: front) {
-            return match
+    /// Which call the live mic most likely belongs to. A frontmost call app is the
+    /// strongest signal, then a browser with a Meet tab, and only then a call app idling
+    /// in the background (which must itself be using the mic, or Slack merely running
+    /// would claim every Meet call).
+    private func detectTargetSource() async -> RecordingSource? {
+        await Self.resolveSource(
+            frontmost: NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                .flatMap(RecordingSource.source(forBundleID:)),
+            hasMeetTab: { await self.browserDetector.meetBrowserBundleID() != nil },
+            backgroundCallApp: Self.backgroundCallAppUsingMic
+        )
+    }
+
+    /// The source-ordering rule, with the expensive checks passed in so each runs only
+    /// when the stronger ones came up empty.
+    static func resolveSource(
+        frontmost: RecordingSource?,
+        hasMeetTab: () async -> Bool,
+        backgroundCallApp: () -> RecordingSource?
+    ) async -> RecordingSource? {
+        if let frontmost { return frontmost }
+        if await hasMeetTab() { return .googleMeet }
+        return backgroundCallApp()
+    }
+
+    private static func backgroundCallAppUsingMic() -> RecordingSource? {
+        let running = NSWorkspace.shared.runningApplications
+        return RecordingSource.detectable.first { source in
+            running.contains { app in
+                guard let id = app.bundleIdentifier, source.bundleIDs.contains(id) else { return false }
+                guard #available(macOS 14.4, *) else { return true }
+                return app.bundleURL.map { AudioProcesses.isRunning(.input, inBundleAt: $0.path) } ?? false
+            }
         }
-        let running = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier })
-        if let native = RecordingSource.detectable.first(where: { source in
-            source.bundleIDs.contains(where: running.contains)
-        }) {
-            return native
-        }
-        return browserDetector.meetBrowserBundleID() != nil ? .googleMeet : nil
     }
 
     private func installRunningListener() {

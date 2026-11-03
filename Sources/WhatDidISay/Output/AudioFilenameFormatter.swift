@@ -3,8 +3,8 @@ import Foundation
 enum AudioFilenameFormatter {
     static func render(format: String, date: Date, source: RecordingSource, track: String) -> String {
         let substituted = format
-            .replacingOccurrences(of: "{date}", with: formatted(date, "yyyy-MM-dd"))
-            .replacingOccurrences(of: "{time}", with: formatted(date, "HHmm"))
+            .replacingOccurrences(of: "{date}", with: DateFormatter.posix("yyyy-MM-dd").string(from: date))
+            .replacingOccurrences(of: "{time}", with: DateFormatter.posix("HHmm").string(from: date))
             .replacingOccurrences(of: "{source}", with: source.displayName)
             .replacingOccurrences(of: "{track}", with: track)
 
@@ -18,12 +18,5 @@ enum AudioFilenameFormatter {
         value
             .replacingOccurrences(of: "/", with: "")
             .replacingOccurrences(of: ":", with: "")
-    }
-
-    private static func formatted(_ date: Date, _ pattern: String) -> String {
-        let fmt = DateFormatter()
-        fmt.dateFormat = pattern
-        fmt.locale = Locale(identifier: "en_US_POSIX")
-        return fmt.string(from: date)
     }
 }

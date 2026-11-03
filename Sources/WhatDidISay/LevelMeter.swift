@@ -1,6 +1,10 @@
 import SwiftUI
 
 /// A segmented bar that lights up with how loud a channel currently is.
+///
+/// Not animated: levels arrive fifteen times a second, so any easing between them
+/// would keep the meter redrawing at the display's full refresh rate for the whole
+/// call. The monitor's peak decay already keeps it from flickering.
 struct LevelMeter: View {
     let level: Float
     var segments = 8
@@ -16,7 +20,6 @@ struct LevelMeter: View {
             }
         }
         .frame(height: height)
-        .animation(.linear(duration: 0.08), value: level)
         .accessibilityHidden(true)
     }
 

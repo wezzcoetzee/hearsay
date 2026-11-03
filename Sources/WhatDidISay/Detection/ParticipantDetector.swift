@@ -47,37 +47,14 @@ struct ParticipantDetector: Sendable {
 
     private static func accessibilityNames(pid: pid_t) -> Set<String> {
         guard AXIsProcessTrusted() else { return [] }
-        let app = AXUIElementCreateApplication(pid)
         var strings: [String] = []
-        var budget = 4000
-        collect(app, depth: 0, budget: &budget, into: &strings)
+        AccessibilityTree.walk(from: AXUIElementCreateApplication(pid), maxDepth: 18, budget: 4000) { element in
+            if AccessibilityTree.string(element, kAXRoleAttribute) == (kAXStaticTextRole as String) {
+                strings += [kAXValueAttribute, kAXTitleAttribute].compactMap { AccessibilityTree.string(element, $0) }
+            }
+            return false
+        }
         return filterNames(strings)
-    }
-
-    private static func collect(_ element: AXUIElement, depth: Int, budget: inout Int, into strings: inout [String]) {
-        guard depth < 18, budget > 0 else { return }
-        budget -= 1
-
-        if axString(element, kAXRoleAttribute) == (kAXStaticTextRole as String) {
-            if let value = axString(element, kAXValueAttribute) { strings.append(value) }
-            if let title = axString(element, kAXTitleAttribute) { strings.append(title) }
-        }
-        for child in axChildren(element) {
-            collect(child, depth: depth + 1, budget: &budget, into: &strings)
-        }
-    }
-
-    private static func axString(_ element: AXUIElement, _ attribute: String) -> String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
-        return value as? String
-    }
-
-    private static func axChildren(_ element: AXUIElement) -> [AXUIElement] {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value) == .success,
-              let children = value as? [AXUIElement] else { return [] }
-        return children
     }
 
     // MARK: Filtering

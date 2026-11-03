@@ -8,56 +8,35 @@ import ApplicationServices
 /// isn't enough. We inspect each browser's accessibility tree for a tab titled with
 /// a Meet meeting code (`abc-defg-hij`), which only appears once you're in (or in the
 /// green room of) an actual meeting, not on the meet.google.com landing page.
-@MainActor
-struct BrowserCallDetector {
-    func meetBrowserBundleID() -> String? {
+struct BrowserCallDetector: Sendable {
+    /// Walks thousands of accessibility elements, so it runs off the main actor.
+    func meetBrowserBundleID() async -> String? {
         guard AXIsProcessTrusted() else { return nil }
-        let running = NSWorkspace.shared.runningApplications
-        for bundleID in RecordingSource.browserBundleIDs {
-            guard let app = running.first(where: { $0.bundleIdentifier == bundleID }) else { continue }
-            if hasMeetTab(pid: app.processIdentifier) { return bundleID }
+        let browsers = await MainActor.run {
+            let running = NSWorkspace.shared.runningApplications
+            return RecordingSource.browserBundleIDs.compactMap { bundleID in
+                running.first { $0.bundleIdentifier == bundleID }.map { (bundleID, $0.processIdentifier) }
+            }
         }
-        return nil
+        return await Task.detached {
+            browsers.first { Self.hasMeetTab(pid: $0.1) }?.0
+        }.value
     }
 
     private static let meetCode = try! NSRegularExpression(
         pattern: "\\b[a-z]{3}-[a-z]{4}-[a-z]{3}\\b"
     )
 
-    private func hasMeetTab(pid: pid_t) -> Bool {
-        let app = AXUIElementCreateApplication(pid)
-        var budget = 6000
-        return search(app, depth: 0, budget: &budget)
-    }
-
-    private func search(_ element: AXUIElement, depth: Int, budget: inout Int) -> Bool {
-        guard depth < 20, budget > 0 else { return false }
-        budget -= 1
-
-        if let title = Self.axString(element, kAXTitleAttribute), Self.isMeetTitle(title) { return true }
-        if let value = Self.axString(element, kAXValueAttribute), Self.isMeetTitle(value) { return true }
-
-        for child in Self.axChildren(element) {
-            if search(child, depth: depth + 1, budget: &budget) { return true }
+    private static func hasMeetTab(pid: pid_t) -> Bool {
+        AccessibilityTree.walk(from: AXUIElementCreateApplication(pid), maxDepth: 20, budget: 6000) { element in
+            [kAXTitleAttribute, kAXValueAttribute].contains { attribute in
+                AccessibilityTree.string(element, attribute).map(isMeetTitle) ?? false
+            }
         }
-        return false
     }
 
     private static func isMeetTitle(_ title: String) -> Bool {
         let range = NSRange(title.startIndex..<title.endIndex, in: title)
         return meetCode.firstMatch(in: title, range: range) != nil
-    }
-
-    private static func axString(_ element: AXUIElement, _ attribute: String) -> String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
-        return value as? String
-    }
-
-    private static func axChildren(_ element: AXUIElement) -> [AXUIElement] {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value) == .success,
-              let children = value as? [AXUIElement] else { return [] }
-        return children
     }
 }

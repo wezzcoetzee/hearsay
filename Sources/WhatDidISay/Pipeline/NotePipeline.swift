@@ -34,9 +34,9 @@ struct NotePipeline {
     }
 
     let transcript: TranscriptBuilder
-    let summarize: @MainActor ([TranscriptSegment]) async -> String?
+    let summarize: @MainActor ([TranscriptSegment]) async -> NoteSummary?
     let confirmRoster: ((RosterReview) async -> ReviewedRoster?)?
-    var writeNote: (String, RecordingSource, Date, URL) throws -> URL = MarkdownWriter.write
+    var writeNote: (String, NoteMetadata, URL) throws -> URL = MarkdownWriter.write
 
     func run(_ input: Input, onStage: @MainActor (Stage) -> Void) async throws -> Outcome {
         // Checked up front so the user can fix it and retry before minutes of transcription.
@@ -73,22 +73,24 @@ struct NotePipeline {
             date: session.startedAt,
             source: session.source,
             duration: session.duration,
-            participants: roster.participants
+            participants: roster.participants,
+            topic: summary?.topic
         )
-        let markdown = MarkdownWriter.render(segments: named, metadata: metadata, summary: summary)
+        let markdown = MarkdownWriter.render(segments: named, metadata: metadata, summary: summary?.markdown)
 
         onStage(.saving)
-        session.noteURL = try writeNote(markdown, session.source, session.startedAt, folder)
+        session.noteURL = try writeNote(markdown, metadata, folder)
         return .saved(noteURL: session.noteURL, folder: folder)
     }
 
     /// Transcription is the slow, crash-prone step, so its result is saved beside the
     /// audio the moment it exists and reused by any later run of the same recording.
+    /// A transcript whose requested diarization failed isn't saved, so a retry tries again.
     private func transcribe(_ input: Input, onStage: @MainActor (Stage) -> Void) async throws -> [TranscriptSegment] {
         let session = input.session
         if let saved = session.savedTranscript { return saved }
 
-        let segments = try await transcript.build(
+        let built = try await transcript.build(
             system: session.systemAudioURL,
             mic: session.micAudioURL,
             model: input.model,
@@ -101,12 +103,14 @@ struct NotePipeline {
             }
         }
         try Task.checkCancellation()
-        do {
-            try session.saveTranscript(segments)
-        } catch {
-            // A safety net, not a step: the note can still be made without it.
-            NSLog("Couldn't save transcript: \(error)")
+        if !built.diarizationFailed {
+            do {
+                try session.saveTranscript(built.segments)
+            } catch {
+                // A safety net, not a step: the note can still be made without it.
+                NSLog("Couldn't save transcript: \(error)")
+            }
         }
-        return segments
+        return built.segments
     }
 }

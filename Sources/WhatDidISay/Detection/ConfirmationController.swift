@@ -60,30 +60,11 @@ final class ConfirmationController: ObservableObject {
     }
 
     private func showPanel() {
-        let view = ConfirmationView(controller: self)
-        let hosting = NSHostingView(rootView: view)
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 140),
-            styleMask: [.nonactivatingPanel, .fullSizeContentView, .titled],
-            backing: .buffered,
-            defer: false
-        )
+        let panel = NSPanel.floating(contentView: NSHostingView(rootView: ConfirmationView(controller: self)),
+                                     size: NSSize(width: 360, height: 140),
+                                     styleMask: [.titled])
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
-        panel.isMovableByWindowBackground = true
-        panel.level = .floating
-        panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = hosting
-
-        if let screen = NSScreen.main {
-            let frame = screen.visibleFrame
-            let size = panel.frame.size
-            panel.setFrameOrigin(NSPoint(
-                x: frame.maxX - size.width - 24,
-                y: frame.maxY - size.height - 24
-            ))
-        }
         panel.orderFrontRegardless()
         self.panel = panel
     }
@@ -91,6 +72,7 @@ final class ConfirmationController: ObservableObject {
 
 struct ConfirmationView: View {
     @ObservedObject var controller: ConfirmationController
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -100,9 +82,12 @@ struct ConfirmationView: View {
                 Text("\(controller.pending?.displayName ?? "Call") detected")
                     .font(.headline)
                 Spacer()
+                // Once a second for fifteen seconds, so a rolling digit costs nothing.
                 Text("Dismisses in \(controller.countdown)s")
                     .font(.caption).monospacedDigit()
                     .foregroundStyle(.secondary)
+                    .contentTransition(.numericText(countsDown: true))
+                    .animation(reduceMotion ? nil : .snappy, value: controller.countdown)
             }
             Text(controller.cloudActive
                  ? "Nothing is recorded unless you choose to. Everyone on the call may be recorded. Audio stays on your Mac; the transcript is sent to Anthropic for the summary."
@@ -127,9 +112,12 @@ struct ConfirmationView: View {
 
 #if DEBUG
 extension ConfirmationController {
-    func seedForScreenshots(source: RecordingSource, countdown: Int) {
+    /// Shows the prompt's content without a panel or countdown, for the screenshot
+    /// catalog. Debug builds only.
+    func stageForScreenshots(source: RecordingSource, countdown: Int, cloudActive: Bool) {
         pending = source
         self.countdown = countdown
+        self.cloudActive = cloudActive
     }
 }
 #endif
