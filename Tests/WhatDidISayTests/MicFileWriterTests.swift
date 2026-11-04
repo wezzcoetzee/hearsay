@@ -1,5 +1,6 @@
-import Testing
 import AVFoundation
+import Testing
+
 @testable import WhatDidISay
 
 @Suite struct MicFileWriterTests {
@@ -9,7 +10,9 @@ import AVFoundation
         return (try AVAudioFile(forWriting: url, settings: format.settings), url)
     }
 
-    private func tone(sampleRate: Double, channels: AVAudioChannelCount, frames: AVAudioFrameCount) throws -> AVAudioPCMBuffer {
+    private func tone(sampleRate: Double, channels: AVAudioChannelCount, frames: AVAudioFrameCount) throws
+        -> AVAudioPCMBuffer
+    {
         let format = try #require(AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: channels))
         let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames))
         buffer.frameLength = frames

@@ -1,7 +1,7 @@
-import Foundation
-import Accelerate
 import AVFoundation
+import Accelerate
 import CoreMedia
+import Foundation
 
 /// Loudness maths shared by both capture paths: raw audio in, 0...1 meter reading out.
 enum AudioLevel {
@@ -35,9 +35,10 @@ enum AudioLevel {
 
     static func level(of sampleBuffer: CMSampleBuffer) -> Float {
         guard let description = CMSampleBufferGetFormatDescription(sampleBuffer),
-              let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee,
-              asbd.mFormatFlags & kAudioFormatFlagIsFloat != 0,
-              asbd.mBitsPerChannel == 32 else { return 0 }
+            let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee,
+            asbd.mFormatFlags & kAudioFormatFlagIsFloat != 0,
+            asbd.mBitsPerChannel == 32
+        else { return 0 }
 
         let channelCount = max(1, Int(asbd.mChannelsPerFrame))
         let list = AudioBufferList.allocate(maximumBuffers: channelCount)
@@ -195,7 +196,9 @@ final class AudioLevelMonitor: ObservableObject {
         update(\.micSilent, to: micSilence.isSilent(at: now))
     }
 
-    private func update<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<AudioLevelMonitor, Value>, to value: Value) {
+    private func update<Value: Equatable>(
+        _ keyPath: ReferenceWritableKeyPath<AudioLevelMonitor, Value>, to value: Value
+    ) {
         if self[keyPath: keyPath] != value { self[keyPath: keyPath] = value }
     }
 
@@ -205,13 +208,13 @@ final class AudioLevelMonitor: ObservableObject {
 }
 
 #if DEBUG
-extension AudioLevelMonitor {
-    /// Fixed meter readings for the screenshot catalog. Debug builds only.
-    func stageForScreenshots(mic: Float, system: Float, micSilent: Bool = false, tracksSystemAudio: Bool = true) {
-        self.mic = mic
-        self.system = system
-        self.micSilent = micSilent
-        self.tracksSystemAudio = tracksSystemAudio
+    extension AudioLevelMonitor {
+        /// Fixed meter readings for the screenshot catalog. Debug builds only.
+        func stageForScreenshots(mic: Float, system: Float, micSilent: Bool = false, tracksSystemAudio: Bool = true) {
+            self.mic = mic
+            self.system = system
+            self.micSilent = micSilent
+            self.tracksSystemAudio = tracksSystemAudio
+        }
     }
-}
 #endif

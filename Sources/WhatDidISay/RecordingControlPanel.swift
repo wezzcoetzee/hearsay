@@ -1,6 +1,6 @@
-import SwiftUI
 import AppKit
 import Combine
+import SwiftUI
 
 @MainActor
 final class RecordingControlPanelController: ObservableObject {
@@ -75,9 +75,10 @@ final class RecordingControlPanelController: ObservableObject {
         let current = panel.frame
         let screen = panel.screen?.visibleFrame ?? current
         let pinsRight = current.midX > screen.midX
-        let target = NSRect(x: pinsRight ? current.maxX - size.width : current.minX,
-                            y: current.maxY - size.height,
-                            width: size.width, height: size.height)
+        let target = NSRect(
+            x: pinsRight ? current.maxX - size.width : current.minX,
+            y: current.maxY - size.height,
+            width: size.width, height: size.height)
         NSAnimationContext.runAnimationGroup { context in
             context.duration = animates ? Self.resizeDuration : 0
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -155,21 +156,26 @@ struct RecordingControlPanelView: View {
             }
 
             HStack(spacing: 14) {
-                ChannelMeter(symbol: "mic.fill", name: "Microphone level",
-                             level: levels.mic, isSilent: levels.micSilent)
-                    .help(levels.micSilent ? "No sound from your microphone" : "Microphone level")
+                ChannelMeter(
+                    symbol: "mic.fill", name: "Microphone level",
+                    level: levels.mic, isSilent: levels.micSilent
+                )
+                .help(levels.micSilent ? "No sound from your microphone" : "Microphone level")
                 if levels.tracksSystemAudio {
-                    ChannelMeter(symbol: "speaker.wave.2.fill", name: "Call audio level",
-                                 level: levels.system, isSilent: false)
-                        .help("Call audio level")
+                    ChannelMeter(
+                        symbol: "speaker.wave.2.fill", name: "Call audio level",
+                        level: levels.system, isSilent: false
+                    )
+                    .help("Call audio level")
                 }
                 Spacer(minLength: 0)
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .frame(width: RecordingControlPanelController.expandedSize.width,
-               height: RecordingControlPanelController.expandedSize.height)
+        .frame(
+            width: RecordingControlPanelController.expandedSize.width,
+            height: RecordingControlPanelController.expandedSize.height)
     }
 
     private var minimized: some View {
@@ -184,8 +190,10 @@ struct RecordingControlPanelView: View {
                 Image(systemName: "chevron.up").font(.caption2).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12)
-            .frame(width: RecordingControlPanelController.minimizedSize.width,
-                   height: RecordingControlPanelController.minimizedSize.height)
+            .frame(
+                width: RecordingControlPanelController.minimizedSize.width,
+                height: RecordingControlPanelController.minimizedSize.height
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

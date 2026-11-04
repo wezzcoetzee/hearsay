@@ -1,9 +1,9 @@
+import AppKit
+import ApplicationServices
 import Foundation
+import NaturalLanguage
 import ScreenCaptureKit
 import Vision
-import ApplicationServices
-import AppKit
-import NaturalLanguage
 
 struct ParticipantDetector: Sendable {
     func detect(targetBundleID: String) async -> Set<String> {
@@ -34,7 +34,8 @@ struct ParticipantDetector: Sendable {
     private func captureImage(targetBundleID: String) async throws -> CGImage? {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let app = content.applications.first(where: { $0.bundleIdentifier == targetBundleID }),
-              let display = content.displays.first else { return nil }
+            let display = content.displays.first
+        else { return nil }
 
         let filter = SCContentFilter(display: display, including: [app], exceptingWindows: [])
         let config = SCStreamConfiguration()
@@ -64,7 +65,7 @@ struct ParticipantDetector: Sendable {
         "settings", "people", "add", "slack", "teams", "microsoft", "join", "chat", "reactions",
         "more", "record", "recording", "speaker", "mic", "microphone", "you", "present", "raise",
         "hand", "participants", "call", "meeting", "end", "hang up", "stop", "start", "on", "off",
-        "gallery", "grid", "background", "effects", "device", "audio", "output", "input"
+        "gallery", "grid", "background", "effects", "device", "audio", "output", "input",
     ]
 
     static func filterNames(_ lines: [String]) -> Set<String> {
@@ -87,7 +88,7 @@ struct ParticipantDetector: Sendable {
 
     private static let lexicalTags: Set<NLTag> = [
         .noun, .verb, .adjective, .adverb, .pronoun, .determiner, .particle,
-        .preposition, .number, .conjunction, .interjection, .classifier, .idiom, .otherWord
+        .preposition, .number, .conjunction, .interjection, .classifier, .idiom, .otherWord,
     ]
 
     /// True when every token is a common dictionary word, marking UI phrases like

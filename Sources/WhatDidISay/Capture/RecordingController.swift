@@ -1,6 +1,6 @@
-import Foundation
-import Combine
 import AppKit
+import Combine
+import Foundation
 
 @MainActor
 final class RecordingController: ObservableObject {
@@ -67,9 +67,11 @@ final class RecordingController: ObservableObject {
     /// or `nil` when the user chooses to delete the call.
     var confirmRoster: ((RosterReview) async -> ReviewedRoster?)?
 
-    init(settings: Settings, permissions: PermissionsManager,
-         history: RecordingHistory = RecordingHistory(),
-         recordingsFolder: URL = RecordingSession.recordingsFolder) {
+    init(
+        settings: Settings, permissions: PermissionsManager,
+        history: RecordingHistory = RecordingHistory(),
+        recordingsFolder: URL = RecordingSession.recordingsFolder
+    ) {
         self.settings = settings
         self.permissions = permissions
         self.history = history
@@ -77,14 +79,16 @@ final class RecordingController: ObservableObject {
         self.systemCapture = SystemAudioCapture(levels: levels.sink)
         self.micCapture = MicCapture(levels: levels.sink)
         micCapture.onInterrupted = reportInterruption(
-            "The microphone stopped recording, so the rest of what you say may be missing. Stop and start again to recover.")
+            "The microphone stopped recording, so the rest of what you say may be missing. Stop and start again to recover."
+        )
         systemCapture.onInterrupted = reportInterruption(
             "Call audio stopped recording, so the rest of the call may be missing. Stop and start again to recover.")
         activityMonitor.onEnded = { [weak self] in
             Task { await self?.stop() }
         }
-        needsAttention = RecordingSession.unfinished(in: recordingsFolder,
-                                                     notedPaths: Set(history.entries.compactMap(\.recordingPath)))
+        needsAttention = RecordingSession.unfinished(
+            in: recordingsFolder,
+            notedPaths: Set(history.entries.compactMap(\.recordingPath)))
     }
 
     private func bundleID(for source: RecordingSource) async -> String? {
@@ -132,9 +136,10 @@ final class RecordingController: ObservableObject {
         lastSave = nil
         permissions.refresh()
         guard permissions.isGranted(for: source) else {
-            state = .failed(source.usesSystemAudio
-                            ? "Grant Microphone and Screen Recording, then relaunch."
-                            : "Grant Microphone, then relaunch.")
+            state = .failed(
+                source.usesSystemAudio
+                    ? "Grant Microphone and Screen Recording, then relaunch."
+                    : "Grant Microphone, then relaunch.")
             return
         }
         guard settings.hasOutputFolder else {
@@ -165,7 +170,8 @@ final class RecordingController: ObservableObject {
             await teardown()
             session.deleteRecording()
             NSLog("Recording start failed: \(error)")
-            state = .failed("Couldn't start recording. Another app may be using the microphone or system audio. Try again.")
+            state = .failed(
+                "Couldn't start recording. Another app may be using the microphone or system audio. Try again.")
         }
     }
 
@@ -408,21 +414,23 @@ final class RecordingController: ObservableObject {
 }
 
 #if DEBUG
-extension RecordingController {
-    /// Puts the menu into a given state for the screenshot catalog without touching
-    /// audio hardware. Debug builds only.
-    func stageForScreenshots(_ state: State,
-                             lastSave: SaveConfirmation? = nil,
-                             needsAttention: [RecordingSession] = [],
-                             failedToStart: Bool = false,
-                             lastSource: RecordingSource = .manual,
-                             captureWarning: String? = nil) {
-        self.state = state
-        self.lastSave = lastSave
-        self.needsAttention = needsAttention
-        self.failedToStart = failedToStart
-        self.lastSource = lastSource
-        self.captureWarning = captureWarning
+    extension RecordingController {
+        /// Puts the menu into a given state for the screenshot catalog without touching
+        /// audio hardware. Debug builds only.
+        func stageForScreenshots(
+            _ state: State,
+            lastSave: SaveConfirmation? = nil,
+            needsAttention: [RecordingSession] = [],
+            failedToStart: Bool = false,
+            lastSource: RecordingSource = .manual,
+            captureWarning: String? = nil
+        ) {
+            self.state = state
+            self.lastSave = lastSave
+            self.needsAttention = needsAttention
+            self.failedToStart = failedToStart
+            self.lastSource = lastSource
+            self.captureWarning = captureWarning
+        }
     }
-}
 #endif

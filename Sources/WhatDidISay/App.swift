@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 enum AppInfo {
     static let displayName = "What Did I Say"
@@ -15,8 +15,10 @@ struct AppHeader<Trailing: View>: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 24, height: 24)
-                .background(Color.accentColor.opacity(0.15),
-                            in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background(
+                    Color.accentColor.opacity(0.15),
+                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                )
                 .accessibilityHidden(true)
             Text(AppInfo.displayName).font(.headline)
             Spacer()
@@ -59,26 +61,28 @@ struct WhatDidISayApp: App {
     @StateObject private var coordinator = AppCoordinator()
 
     #if DEBUG
-    init() {
-        if let directory = ScreenshotRenderer.outputDirectory {
-            ScreenshotRenderer.run(into: directory)
+        init() {
+            if let directory = ScreenshotRenderer.outputDirectory {
+                ScreenshotRenderer.run(into: directory)
+            }
         }
-    }
     #endif
 
     var body: some Scene {
         MenuBarExtra {
-            MenuContent(recorder: coordinator.recorder,
-                        settings: coordinator.settings,
-                        permissions: coordinator.permissions,
-                        history: coordinator.recorder.history,
-                        levels: coordinator.recorder.levels,
-                        onboarding: coordinator.onboarding)
+            MenuContent(
+                recorder: coordinator.recorder,
+                settings: coordinator.settings,
+                permissions: coordinator.permissions,
+                history: coordinator.recorder.history,
+                levels: coordinator.recorder.levels,
+                onboarding: coordinator.onboarding)
         } label: {
             Image(nsImage: MenuBarIcon.image(recording: coordinator.recorder.isRecording))
-                .accessibilityLabel(coordinator.recorder.isRecording
-                                    ? "\(AppInfo.displayName), recording"
-                                    : "\(AppInfo.displayName), idle")
+                .accessibilityLabel(
+                    coordinator.recorder.isRecording
+                        ? "\(AppInfo.displayName), recording"
+                        : "\(AppInfo.displayName), idle")
         }
         .menuBarExtraStyle(.window)
 
@@ -138,9 +142,11 @@ struct MenuContent: View {
                 Task { await recorder.toggle(source: pendingSource) }
             }
         } message: {
-            Text(pendingSource.usesSystemAudio
-                 ? "Everyone on the call may be recorded. Audio and transcripts stay on your Mac unless you turn on cloud summaries. Record responsibly."
-                 : "Everyone in the room may be recorded. Audio and transcripts stay on your Mac unless you turn on cloud summaries. Record responsibly.")
+            Text(
+                pendingSource.usesSystemAudio
+                    ? "Everyone on the call may be recorded. Audio and transcripts stay on your Mac unless you turn on cloud summaries. Record responsibly."
+                    : "Everyone in the room may be recorded. Audio and transcripts stay on your Mac unless you turn on cloud summaries. Record responsibly."
+            )
         }
         .alert("Quit before this call is a note?", isPresented: $confirmingQuit) {
             Button("Cancel", role: .cancel) {}
@@ -153,9 +159,11 @@ struct MenuContent: View {
         } message: {
             Text("Its audio is kept and shows under Needs attention when you reopen the app.")
         }
-        .confirmationDialog("Discard this recording?",
-                            isPresented: Binding(get: { discarding != nil }, set: { if !$0 { discarding = nil } }),
-                            presenting: discarding) { session in
+        .confirmationDialog(
+            "Discard this recording?",
+            isPresented: Binding(get: { discarding != nil }, set: { if !$0 { discarding = nil } }),
+            presenting: discarding
+        ) { session in
             Button("Discard Recording", role: .destructive) { Task { await recorder.discard(session) } }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
@@ -188,11 +196,15 @@ struct MenuContent: View {
     @ViewBuilder
     private var recordButton: some View {
         if recorder.isRecording {
-            Button { Task { await recorder.toggle() } } label: { recordLabel }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .tint(.red)
-                .disabled(recordButtonDisabled)
+            Button {
+                Task { await recorder.toggle() }
+            } label: {
+                recordLabel
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(.red)
+            .disabled(recordButtonDisabled)
         } else {
             Menu {
                 Button("Record a Call") { begin(.manual) }
@@ -344,10 +356,11 @@ struct MenuContent: View {
                 }
                 .padding(.horizontal, 2)
                 ForEach(pending.prefix(Self.visiblePending), id: \.id) { session in
-                    PendingRow(session: session,
-                               canProcess: !recorder.isBusy && settings.hasOutputFolder,
-                               onProcess: { Task { await recorder.retry(session) } },
-                               onDiscard: { discarding = session })
+                    PendingRow(
+                        session: session,
+                        canProcess: !recorder.isBusy && settings.hasOutputFolder,
+                        onProcess: { Task { await recorder.retry(session) } },
+                        onDiscard: { discarding = session })
                 }
                 if pending.count > Self.visiblePending {
                     Text("and \(pending.count - Self.visiblePending) more")
@@ -420,7 +433,9 @@ struct MenuContent: View {
     }
 
     @ViewBuilder
-    private func permissionRow(_ name: String, status: PermissionsManager.Status, pane: PermissionsManager.Pane) -> some View {
+    private func permissionRow(_ name: String, status: PermissionsManager.Status, pane: PermissionsManager.Pane)
+        -> some View
+    {
         HStack(spacing: 6) {
             Image(systemName: status.isGranted ? "checkmark.circle.fill" : "circle")
                 .foregroundStyle(status.isGranted ? .green : .secondary)
@@ -469,9 +484,10 @@ struct MenuContent: View {
             }
             .padding(.horizontal, 2)
             ForEach(history.entries.prefix(5)) { entry in
-                HistoryRow(entry: entry,
-                           onOpen: { NSWorkspace.shared.open($0) },
-                           onRemove: { history.remove(entry) })
+                HistoryRow(
+                    entry: entry,
+                    onOpen: { NSWorkspace.shared.open($0) },
+                    onRemove: { history.remove(entry) })
             }
         }
     }
@@ -500,12 +516,15 @@ private struct RecordingStatus: View {
             if let warning {
                 caution(warning)
             } else if levels.micSilent {
-                caution("Nothing is reaching the microphone. Check it isn't muted and that the right input device is selected.")
+                caution(
+                    "Nothing is reaching the microphone. Check it isn't muted and that the right input device is selected."
+                )
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
-        .background(.red.opacity(0.1),
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(
+            .red.opacity(0.1),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func caution(_ text: String) -> some View {
@@ -516,8 +535,9 @@ private struct RecordingStatus: View {
 
     private func meterRow(_ name: String, symbol: String, level: Float, isSilent: Bool) -> some View {
         HStack(spacing: 8) {
-            ChannelMeter(symbol: symbol, name: "\(name) level",
-                         level: level, isSilent: isSilent, segments: 14)
+            ChannelMeter(
+                symbol: symbol, name: "\(name) level",
+                level: level, isSilent: isSilent, segments: 14)
             Text(isSilent ? "no sound" : name)
                 .font(.caption2)
                 .foregroundStyle(isSilent ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
@@ -533,15 +553,21 @@ private struct PendingRow: View {
     let onDiscard: () -> Void
 
     var body: some View {
-        ListRow(title: session.source.displayName,
-                subtitle: "\(session.startedAt.formatted(.dateTime.month().day().hour().minute())) · \(ElapsedTime.clock(Int(session.duration))) · \(status)") { hovering in
-            RowIconButton(symbol: "arrow.clockwise", help: "Make a note from this recording",
-                          label: "Make a note from this recording, \(session.source.displayName)",
-                          hovering: hovering, action: onProcess)
-                .disabled(!canProcess)
-            RowIconButton(symbol: "trash", help: "Discard recording",
-                          label: "Discard recording, \(session.source.displayName)",
-                          hovering: hovering, action: onDiscard)
+        ListRow(
+            title: session.source.displayName,
+            subtitle:
+                "\(session.startedAt.formatted(.dateTime.month().day().hour().minute())) · \(ElapsedTime.clock(Int(session.duration))) · \(status)"
+        ) { hovering in
+            RowIconButton(
+                symbol: "arrow.clockwise", help: "Make a note from this recording",
+                label: "Make a note from this recording, \(session.source.displayName)",
+                hovering: hovering, action: onProcess
+            )
+            .disabled(!canProcess)
+            RowIconButton(
+                symbol: "trash", help: "Discard recording",
+                label: "Discard recording, \(session.source.displayName)",
+                hovering: hovering, action: onDiscard)
         }
     }
 
@@ -556,17 +582,22 @@ private struct HistoryRow: View {
     let onRemove: () -> Void
 
     var body: some View {
-        ListRow(title: entry.source,
-                subtitle: entry.date.formatted(.dateTime.month().day().hour().minute())) { hovering in
+        ListRow(
+            title: entry.source,
+            subtitle: entry.date.formatted(.dateTime.month().day().hour().minute())
+        ) { hovering in
             // Notes can be moved or deleted in the vault; don't offer to open a ghost.
             if let note = entry.noteURL, FileManager.default.fileExists(atPath: note.path) {
-                RowIconButton(symbol: "doc.text", help: "Open note",
-                              label: "Open note for \(entry.source)",
-                              hovering: hovering) { onOpen(note) }
+                RowIconButton(
+                    symbol: "doc.text", help: "Open note",
+                    label: "Open note for \(entry.source)",
+                    hovering: hovering
+                ) { onOpen(note) }
             }
-            RowIconButton(symbol: "xmark.circle", help: "Remove from list",
-                          label: "Remove \(entry.source) from list",
-                          hovering: hovering, action: onRemove)
+            RowIconButton(
+                symbol: "xmark.circle", help: "Remove from list",
+                label: "Remove \(entry.source) from list",
+                hovering: hovering, action: onRemove)
         }
     }
 }
@@ -589,8 +620,10 @@ private struct ListRow<Actions: View>: View {
             actions(hovering)
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
-        .background(hovering ? Color.primary.opacity(0.07) : .clear,
-                    in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(
+            hovering ? Color.primary.opacity(0.07) : .clear,
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+        )
         .onHover { hovering = $0 }
     }
 }

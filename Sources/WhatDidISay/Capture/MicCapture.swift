@@ -1,5 +1,5 @@
-import Foundation
 import AVFoundation
+import Foundation
 
 /// Writes tap buffers to the mic file from the audio thread, while `close()` may run on
 /// the main one. Buffers in another format than the file (the input device changed

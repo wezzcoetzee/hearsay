@@ -31,7 +31,8 @@ struct TranscriptBuilder {
         onProgress: (Phase) -> Void = { _ in }
     ) async throws -> Built {
         guard let system else {
-            return try await buildFromMicAlone(mic: mic, model: model, diarize: diarize, hints: hints, onProgress: onProgress)
+            return try await buildFromMicAlone(
+                mic: mic, model: model, diarize: diarize, hints: hints, onProgress: onProgress)
         }
 
         onProgress(.transcribing)

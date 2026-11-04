@@ -1,6 +1,6 @@
-import SwiftUI
 import AppKit
 import ApplicationServices
+import SwiftUI
 
 @MainActor
 final class ParticipantReviewController: NSObject, NSWindowDelegate {
@@ -85,8 +85,10 @@ struct ParticipantReviewView: View {
     private let onDelete: () -> Void
     private let accessibilityTrusted: Bool
 
-    init(request: RosterReview, accessibilityTrusted: Bool = AXIsProcessTrusted(),
-         onDone: @escaping (ReviewedRoster) -> Void, onDelete: @escaping () -> Void) {
+    init(
+        request: RosterReview, accessibilityTrusted: Bool = AXIsProcessTrusted(),
+        onDone: @escaping (ReviewedRoster) -> Void, onDelete: @escaping () -> Void
+    ) {
         self.voices = request.voices
         self.accessibilityTrusted = accessibilityTrusted
         _names = State(initialValue: request.voices.map(\.suggestion))
@@ -154,7 +156,9 @@ struct ParticipantReviewView: View {
                     Button("Enable") {
                         let options = ["AXTrustedCheckOptionPrompt": true]
                         _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                        if let url = URL(
+                            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+                        {
                             NSWorkspace.shared.open(url)
                         }
                     }
@@ -253,9 +257,10 @@ struct ParticipantReviewView: View {
         let present = (detected.filter(\.included) + added)
             .map { $0.name.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
-        onDone(ReviewedRoster(
-            voices: RosterReview.reviewed(voices, names: names, mergedInto: mergedInto),
-            others: present
-        ))
+        onDone(
+            ReviewedRoster(
+                voices: RosterReview.reviewed(voices, names: names, mergedInto: mergedInto),
+                others: present
+            ))
     }
 }

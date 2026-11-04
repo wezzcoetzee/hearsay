@@ -24,6 +24,8 @@ See [DESIGN.md](DESIGN.md) for the full design and [PRODUCT.md](PRODUCT.md) for 
 open build/WhatDidISay.app
 ```
 
+Lint with `./Scripts/lint.sh` (swift-format, config in `.swift-format`); `./Scripts/lint.sh --fix` formats in place first.
+
 `bundle.sh` compiles the executable, wraps it in a `.app`, and signs it with the hardened runtime via `Scripts/sign.sh`.
 
 `setup-signing.sh` creates a self-signed "WhatDidISay Local Signing" certificate in the login keychain. Every build signed with it gets the same designated requirement (bundle id plus certificate), so macOS keeps Microphone and Screen Recording grants across rebuilds. Without it, `sign.sh` falls back to ad-hoc signing, which ties grants to the binary hash and re-prompts after every build. Override the identity with `SIGN_IDENTITY="..."`. The certificate is only meant for local builds: other Macs still need a Developer ID signature and notarization.

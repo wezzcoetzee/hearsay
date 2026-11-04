@@ -1,6 +1,6 @@
-import SwiftUI
 import AppKit
 import Combine
+import SwiftUI
 
 @MainActor
 final class ConfirmationController: ObservableObject {
@@ -60,9 +60,10 @@ final class ConfirmationController: ObservableObject {
     }
 
     private func showPanel() {
-        let panel = NSPanel.floating(contentView: NSHostingView(rootView: ConfirmationView(controller: self)),
-                                     size: NSSize(width: 360, height: 140),
-                                     styleMask: [.titled])
+        let panel = NSPanel.floating(
+            contentView: NSHostingView(rootView: ConfirmationView(controller: self)),
+            size: NSSize(width: 360, height: 140),
+            styleMask: [.titled])
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.orderFrontRegardless()
@@ -89,11 +90,13 @@ struct ConfirmationView: View {
                     .contentTransition(.numericText(countsDown: true))
                     .animation(reduceMotion ? nil : .snappy, value: controller.countdown)
             }
-            Text(controller.cloudActive
-                 ? "Nothing is recorded unless you choose to. Everyone on the call may be recorded. Audio stays on your Mac; the transcript is sent to Anthropic for the summary."
-                 : "Nothing is recorded unless you choose to. Everyone on the call may be recorded, and everything stays on your Mac.")
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(
+                controller.cloudActive
+                    ? "Nothing is recorded unless you choose to. Everyone on the call may be recorded. Audio stays on your Mac; the transcript is sent to Anthropic for the summary."
+                    : "Nothing is recorded unless you choose to. Everyone on the call may be recorded, and everything stays on your Mac."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Button("Turn Off Auto-Detect") { controller.turnOffAutoDetect() }
                     .buttonStyle(.link)
@@ -111,13 +114,13 @@ struct ConfirmationView: View {
 }
 
 #if DEBUG
-extension ConfirmationController {
-    /// Shows the prompt's content without a panel or countdown, for the screenshot
-    /// catalog. Debug builds only.
-    func stageForScreenshots(source: RecordingSource, countdown: Int, cloudActive: Bool) {
-        pending = source
-        self.countdown = countdown
-        self.cloudActive = cloudActive
+    extension ConfirmationController {
+        /// Shows the prompt's content without a panel or countdown, for the screenshot
+        /// catalog. Debug builds only.
+        func stageForScreenshots(source: RecordingSource, countdown: Int, cloudActive: Bool) {
+            pending = source
+            self.countdown = countdown
+            self.cloudActive = cloudActive
+        }
     }
-}
 #endif

@@ -1,6 +1,6 @@
-import Foundation
-import Combine
 import AppKit
+import Combine
+import Foundation
 
 @MainActor
 final class Settings: ObservableObject {
@@ -150,15 +150,19 @@ final class Settings: ObservableObject {
     }
 
     func chooseOutputFolder() {
-        if let url = pickFolder(prompt: "Choose Vault Folder",
-                                message: "Pick the folder (or Obsidian vault) where notes will be saved.") {
+        if let url = pickFolder(
+            prompt: "Choose Vault Folder",
+            message: "Pick the folder (or Obsidian vault) where notes will be saved.")
+        {
             useOutputFolder(url)
         }
     }
 
     func chooseAudioFolder() {
-        if let url = pickFolder(prompt: "Choose Audio Folder",
-                                message: "Pick the folder where call audio will be kept.") {
+        if let url = pickFolder(
+            prompt: "Choose Audio Folder",
+            message: "Pick the folder where call audio will be kept.")
+        {
             useAudioFolder(url)
         }
     }
@@ -174,12 +178,14 @@ final class Settings: ObservableObject {
     private func resolveFolder(bookmarkKey: String) -> URL? {
         guard let data = defaults.data(forKey: bookmarkKey) else { return nil }
         var stale = false
-        guard let url = try? URL(
-            resolvingBookmarkData: data,
-            options: [.withSecurityScope],
-            relativeTo: nil,
-            bookmarkDataIsStale: &stale
-        ) else { return nil }
+        guard
+            let url = try? URL(
+                resolvingBookmarkData: data,
+                options: [.withSecurityScope],
+                relativeTo: nil,
+                bookmarkDataIsStale: &stale
+            )
+        else { return nil }
 
         if stale {
             refreshBookmark(for: url, key: bookmarkKey)
@@ -205,9 +211,12 @@ final class Settings: ObservableObject {
     }
 
     private func storeBookmark(for url: URL, key: String) -> Bool {
-        guard let data = try? url.bookmarkData(options: [.withSecurityScope],
-                                               includingResourceValuesForKeys: nil,
-                                               relativeTo: nil) else { return false }
+        guard
+            let data = try? url.bookmarkData(
+                options: [.withSecurityScope],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil)
+        else { return false }
         defaults.set(data, forKey: key)
         return true
     }
@@ -226,7 +235,7 @@ enum SummaryBackend: String, CaseIterable {
 }
 
 #if DEBUG
-extension Settings {
-    func seedForScreenshots(outputFolder: String) { outputFolderPath = outputFolder }
-}
+    extension Settings {
+        func seedForScreenshots(outputFolder: String) { outputFolderPath = outputFolder }
+    }
 #endif

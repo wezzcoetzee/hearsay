@@ -15,7 +15,7 @@ let package = Package(
             name: "WhatDidISay",
             dependencies: [
                 .product(name: "WhisperKit", package: "argmax-oss-swift"),
-                .product(name: "SpeakerKit", package: "argmax-oss-swift")
+                .product(name: "SpeakerKit", package: "argmax-oss-swift"),
             ],
             path: "Sources/WhatDidISay"
         ),
@@ -23,6 +23,6 @@ let package = Package(
             name: "WhatDidISayTests",
             dependencies: ["WhatDidISay"],
             path: "Tests/WhatDidISayTests"
-        )
+        ),
     ]
 )

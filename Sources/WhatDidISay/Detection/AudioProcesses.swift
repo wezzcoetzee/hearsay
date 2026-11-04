@@ -1,6 +1,6 @@
-import Foundation
 import CoreAudio
 import Darwin
+import Foundation
 
 /// Per-process audio state (macOS 14.4+). Slack and Teams are Electron apps that often
 /// play and record from a helper process, so a bundle's audio activity is the activity of
