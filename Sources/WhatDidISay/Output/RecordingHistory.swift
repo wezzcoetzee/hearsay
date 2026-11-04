@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 struct HistoryEntry: Codable, Identifiable {
     let id: UUID
@@ -24,7 +24,8 @@ final class RecordingHistory: ObservableObject {
 
     init(fileURL: URL = RecordingHistory.defaultFileURL) {
         self.fileURL = fileURL
-        try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         load()
     }
 
@@ -96,8 +97,8 @@ private extension JSONDecoder {
 }
 
 #if DEBUG
-extension RecordingHistory {
-    /// In memory only: never saved over the user's real history.
-    func seedForScreenshots(_ entries: [HistoryEntry]) { self.entries = entries }
-}
+    extension RecordingHistory {
+        /// In memory only: never saved over the user's real history.
+        func seedForScreenshots(_ entries: [HistoryEntry]) { self.entries = entries }
+    }
 #endif

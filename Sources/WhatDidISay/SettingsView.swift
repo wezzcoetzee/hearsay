@@ -50,7 +50,9 @@ struct SettingsView: View {
                         }
                         .controlSize(.small)
                     }
-                    helper("Each call is saved as a markdown note here. Recordings and audio are stored on your Mac and never uploaded.")
+                    helper(
+                        "Each call is saved as a markdown note here. Recordings and audio are stored on your Mac and never uploaded."
+                    )
                 }
 
                 section("Audio") {
@@ -99,10 +101,12 @@ struct SettingsView: View {
                             SecureField("Anthropic API key", text: $settings.anthropicAPIKey)
                                 .textFieldStyle(.roundedBorder)
                                 .controlSize(.small)
-                            Label("Cloud summaries send the finished transcript text, not audio, to Anthropic. Everything else stays on your Mac.",
-                                  systemImage: "exclamationmark.bubble")
-                                .font(.caption).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                            Label(
+                                "Cloud summaries send the finished transcript text, not audio, to Anthropic. Everything else stays on your Mac.",
+                                systemImage: "exclamationmark.bubble"
+                            )
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
@@ -127,7 +131,9 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) { settings.summaryBackend = .local }
             Button("Use Cloud Summaries") { settings.hasAcknowledgedCloud = true }
         } message: {
-            Text("With cloud summaries on, the finished transcript text of each call is sent to Anthropic to generate the summary. Your audio never leaves your Mac. Turn this off any time to keep everything on-device.")
+            Text(
+                "With cloud summaries on, the finished transcript text of each call is sent to Anthropic to generate the summary. Your audio never leaves your Mac. Turn this off any time to keep everything on-device."
+            )
         }
     }
 

@@ -1,4 +1,5 @@
 import Testing
+
 @testable import WhatDidISay
 
 @Suite struct ParticipantDetectorFilterTests {
@@ -45,7 +46,7 @@ import Testing
 
     @Test func rejectsCapitalisedUIPhrases() {
         let dropped = ParticipantDetector.filterNames([
-            "New Message", "Meeting Notes", "Recording", "Reactions"
+            "New Message", "Meeting Notes", "Recording", "Reactions",
         ])
         #expect(dropped.isEmpty)
     }

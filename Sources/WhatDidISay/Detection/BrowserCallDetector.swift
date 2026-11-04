@@ -1,6 +1,6 @@
-import Foundation
 import AppKit
 import ApplicationServices
+import Foundation
 
 /// Finds a browser that currently has a live Google Meet tab open.
 ///

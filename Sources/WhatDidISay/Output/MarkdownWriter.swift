@@ -70,13 +70,14 @@ enum MarkdownWriter {
             m.topic.map { "topic: \(yamlFlowScalar($0))" },
             "participants: [\(participants)]",
             "duration: \(minutes)m",
-            "---"
+            "---",
         ]
         return lines.compactMap { $0 }.joined(separator: "\n") + "\n"
     }
 
     private static func yamlFlowScalar(_ value: String) -> String {
-        let escaped = value
+        let escaped =
+            value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
             .replacingOccurrences(of: "\n", with: "\\n")

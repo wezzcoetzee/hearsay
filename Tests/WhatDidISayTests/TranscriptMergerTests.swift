@@ -1,4 +1,5 @@
 import Testing
+
 @testable import WhatDidISay
 
 @Suite struct TranscriptMergerTests {
@@ -21,7 +22,7 @@ import Testing
     @Test func mergeBreaksStartTiesByEnd() {
         let merged = TranscriptMerger.merge([
             seg(1, 5, "longer"),
-            seg(1, 2, "shorter")
+            seg(1, 2, "shorter"),
         ])
         #expect(merged.map(\.text) == ["shorter", "longer"])
     }

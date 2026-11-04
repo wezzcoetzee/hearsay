@@ -1,5 +1,5 @@
-import Foundation
 import AppKit
+import Foundation
 
 /// Watches whether a target app (Slack/Teams) is actively producing audio output.
 /// While a huddle/call is live the app runs an output stream; when it ends the stream
@@ -49,7 +49,7 @@ final class CallActivityMonitor {
 
     private func isRunningOutput(bundleID: String) -> Bool {
         guard #available(macOS 14.4, *),
-              let path = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.bundleURL?.path
+            let path = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.bundleURL?.path
         else { return false }
         return AudioProcesses.isRunning(.output, inBundleAt: path)
     }

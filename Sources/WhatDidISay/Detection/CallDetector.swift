@@ -1,6 +1,6 @@
-import Foundation
-import CoreAudio
 import AppKit
+import CoreAudio
+import Foundation
 
 @MainActor
 final class CallDetector {
@@ -52,11 +52,13 @@ final class CallDetector {
             object: nil,
             queue: .main
         ) { [weak self] note in
-            let bundleID = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
+            let bundleID = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?
+                .bundleIdentifier
             Task { @MainActor in
                 guard let self, let bundleID,
-                      RecordingSource.source(forBundleID: bundleID) != nil
-                        || RecordingSource.browserBundleIDs.contains(bundleID) else { return }
+                    RecordingSource.source(forBundleID: bundleID) != nil
+                        || RecordingSource.browserBundleIDs.contains(bundleID)
+                else { return }
                 self.onEnd?(bundleID)
             }
         }
