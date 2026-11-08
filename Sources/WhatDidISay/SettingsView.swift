@@ -2,125 +2,150 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var settings: Settings
+    @ObservedObject var permissions: PermissionsManager
+    @ObservedObject var recorder: RecordingController
     @State private var showCloudConsent = false
+    /// Not observable, so re-read whenever the user may have changed it.
+    @State private var accessibilityTrusted = PermissionsManager.accessibilityTrusted
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                AppHeader { EmptyView() }
-
-                section("General") {
-                    Toggle(isOn: $settings.launchAtLogin) {
-                        Text("Launch at login")
-                    }
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    helper("Start \(AppInfo.displayName) automatically when you log in to your Mac.")
-
-                    Toggle(isOn: $settings.showRecordingPanel) {
-                        Text("Show recording panel")
-                    }
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    helper("Shows a small floating panel with a live timer and stop button while recording.")
+        Form {
+            Section("General") {
+                Toggle(isOn: $settings.autoDetect) {
+                    Text("Auto-detect calls")
+                    Text(
+                        permissions.screenRecording.isGranted
+                            ? Copy.autoDetectExplanation : Copy.autoDetectNeedsScreenRecording)
                 }
-
-                section("Transcription") {
-                    LabeledContent("Accuracy") {
-                        Picker("Accuracy", selection: $settings.model) {
-                            ForEach(Settings.availableModels, id: \.self) { model in
-                                Text(Self.modelLabel(model)).tag(model)
-                            }
-                        }
-                        .labelsHidden()
-                        .fixedSize()
-                    }
-                    Toggle(isOn: $settings.diarize) {
-                        Text("Separate remote speakers")
-                    }
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    helper("Analyzes the other participants’ voices on-device to label who said what.")
+                .disabled(!permissions.screenRecording.isGranted)
+                Toggle(isOn: $settings.showRecordingPanel) {
+                    Text("Show recording panel")
+                    Text("A small floating timer with a stop button while recording.")
                 }
-
-                section("Notes") {
-                    LabeledContent("Vault") {
-                        Button(settings.outputFolderName ?? "Choose…") {
-                            settings.chooseOutputFolder()
-                        }
-                        .controlSize(.small)
-                    }
-                    helper(
-                        "Each call is saved as a markdown note here. Recordings and audio are stored on your Mac and never uploaded."
-                    )
-                }
-
-                section("Audio") {
-                    Toggle(isOn: $settings.keepAudio) {
-                        Text("Keep audio recordings")
-                    }
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-
-                    if settings.keepAudio {
-                        LabeledContent("Save to") {
-                            Button(settings.audioFolderName ?? "Choose…") {
-                                settings.chooseAudioFolder()
-                            }
-                            .controlSize(.small)
-                        }
-                        TextField("Filename format", text: $settings.audioFilenameFormat)
-                            .textFieldStyle(.roundedBorder)
-                            .controlSize(.small)
-                        helper("Tokens: {date} {time} {source} {track}")
-                    }
-                    helper(settings.keepAudioExplanation)
-                }
-
-                section("Summary") {
-                    Toggle(isOn: $settings.summaryEnabled) {
-                        Text("AI summary")
-                    }
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-
-                    if settings.summaryEnabled {
-                        Picker("Summarize with", selection: $settings.summaryBackend) {
-                            ForEach(SummaryBackend.allCases, id: \.self) { Text($0.displayName).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-
-                        switch settings.summaryBackend {
-                        case .local:
-                            TextField("Ollama model", text: $settings.localSummaryModel)
-                                .textFieldStyle(.roundedBorder)
-                                .controlSize(.small)
-                            helper("Runs on your Mac through Ollama. Nothing leaves the device.")
-                        case .cloud:
-                            SecureField("Anthropic API key", text: $settings.anthropicAPIKey)
-                                .textFieldStyle(.roundedBorder)
-                                .controlSize(.small)
-                            Label(
-                                "Cloud summaries send the finished transcript text, not audio, to Anthropic. Everything else stays on your Mac.",
-                                systemImage: "exclamationmark.bubble"
-                            )
-                            .font(.caption).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        }
+                Toggle(isOn: $settings.launchAtLogin) {
+                    Text("Launch at login")
+                    if !settings.launchAtLoginRefused {
+                        Text("Starts quietly in the menu bar when you log in.")
+                    } else {
+                        Text("macOS didn't allow it. Move the app to Applications, then try again.")
                     }
                 }
             }
-            .padding(16)
+
+            Section {
+                permissionRow(
+                    "Microphone", detail: "Your side of a call, and the room in person.",
+                    allowed: permissions.microphone.isGranted,
+                    action: PermissionsManager.actionTitle(for: .microphone, status: permissions.microphone)
+                ) {
+                    Task { await permissions.request(.microphone) }
+                }
+                permissionRow(
+                    "Screen Recording",
+                    detail: permissions.screenRecordingRequested && !permissions.screenRecording.isGranted
+                        ? "Everyone else on a call. \(Copy.relaunchHint)" : "Everyone else on a call.",
+                    allowed: permissions.screenRecording.isGranted
+                ) {
+                    Task { await permissions.request(.screenRecording) }
+                } extra: {
+                    if permissions.screenRecordingRequested {
+                        RelaunchButton(isBusy: recorder.isBusy)
+                    }
+                }
+                permissionRow(
+                    "Accessibility", detail: "Optional. Reads names off the call window.",
+                    allowed: accessibilityTrusted
+                ) {
+                    PermissionsManager.requestAccessibility()
+                }
+            } header: {
+                Text("Permissions")
+            }
+
+            Section("Notes") {
+                LabeledContent {
+                    FolderChoice(path: settings.outputFolderPath, choose: settings.chooseOutputFolder)
+                } label: {
+                    Text("Notes folder")
+                    Text("Each recording becomes a markdown note here.")
+                }
+                Picker(selection: $settings.model) {
+                    ForEach(Settings.availableModels, id: \.self) { model in
+                        Text(Self.modelLabel(model)).tag(model)
+                    }
+                } label: {
+                    Text("Transcription accuracy")
+                    Text("More accurate takes longer. Everything runs on your Mac.")
+                }
+                Toggle(isOn: $settings.diarize) {
+                    Text("Separate remote speakers")
+                    Text(
+                        "Labels each voice on the call as Speaker 1, Speaker 2, and so on. In-person recordings always do this."
+                    )
+                }
+            }
+
+            Section {
+                Toggle(isOn: $settings.keepAudio) {
+                    Text("Keep audio after each note is saved")
+                    Text(settings.keepAudioExplanation)
+                }
+                if settings.keepAudio {
+                    LabeledContent("Audio folder") {
+                        FolderChoice(path: settings.audioFolderPath, choose: settings.chooseAudioFolder)
+                    }
+                    TextField(text: $settings.audioFilenameFormat, prompt: Text(Settings.defaultAudioFilenameFormat)) {
+                        Text("File names")
+                        Text("{track} becomes mic or system; the rest come from the recording.")
+                    }
+                }
+            } header: {
+                Text("Audio")
+            }
+
+            Section {
+                Toggle(isOn: $settings.summaryEnabled) {
+                    Text("AI summary")
+                    Text("Adds a summary and action items to each note, and names it by topic.")
+                }
+                if settings.summaryEnabled {
+                    Picker("Summarize with", selection: $settings.summaryBackend) {
+                        ForEach(SummaryBackend.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                    }
+                    switch settings.summaryBackend {
+                    case .local:
+                        TextField("Ollama model", text: $settings.localSummaryModel)
+                    case .cloud:
+                        SecureField("Anthropic API key", text: $settings.anthropicAPIKey, prompt: Text("Required"))
+                    }
+                }
+            } header: {
+                Text("Summary")
+            } footer: {
+                if settings.summaryEnabled {
+                    Group {
+                        switch settings.summaryBackend {
+                        case .local:
+                            Text("Runs on your Mac through Ollama. Nothing leaves the device.")
+                                .foregroundStyle(.secondary)
+                        case .cloud where settings.anthropicAPIKey.isEmpty:
+                            // A warning keeps primary text, like every Caution.
+                            Caution("Add an API key. Until then no summary is made and nothing is sent.")
+                        case .cloud:
+                            Label(Copy.cloudBoundary, systemImage: "cloud")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.caption)
+                }
+            }
         }
-        .frame(width: 360, height: 480)
+        .formStyle(.grouped)
+        .frame(width: 480, height: 560)
         .navigationTitle("Settings")
-        .onChange(of: settings.keepAudio) { _, isOn in
-            guard isOn, settings.audioFolderPath == nil else { return }
-            settings.chooseAudioFolder()
-            // Cancelling the picker would leave "keep audio" on while audio is still
-            // deleted, so take the switch back off.
-            if settings.audioFolderPath == nil { settings.keepAudio = false }
+        .onAppear(perform: refreshPermissions)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshPermissions()
         }
         .onChange(of: settings.summaryBackend) { _, newValue in
             if newValue == .cloud && !settings.hasAcknowledgedCloud {
@@ -137,29 +162,37 @@ struct SettingsView: View {
         }
     }
 
-    @ViewBuilder
-    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        Divider()
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            content()
-        }
+    private func refreshPermissions() {
+        permissions.refresh()
+        accessibilityTrusted = PermissionsManager.accessibilityTrusted
     }
 
-    private func helper(_ text: String) -> some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+    private func permissionRow<Extra: View>(
+        _ name: String, detail: String, allowed: Bool, action: String = "Allow…",
+        allow: @escaping () -> Void,
+        @ViewBuilder extra: () -> Extra = { EmptyView() }
+    ) -> some View {
+        LabeledContent {
+            if allowed {
+                PermissionStatus(name: name, allowed: true)
+            } else {
+                HStack {
+                    Button(action, action: allow)
+                        .accessibilityLabel("\(action) for \(name)")
+                    extra()
+                }
+            }
+        } label: {
+            Text(name)
+            Text(detail)
+        }
     }
 
     private static func modelLabel(_ model: String) -> String {
         switch model {
         case "tiny": return "Fastest"
         case "base": return "Balanced"
-        case "small": return "More accurate"
+        case "small": return "Accurate"
         case "large-v3": return "Most accurate"
         default: return model
         }

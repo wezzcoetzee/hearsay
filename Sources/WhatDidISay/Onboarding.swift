@@ -17,9 +17,12 @@ final class OnboardingController: ObservableObject {
         permissions.allGranted && settings.hasOutputFolder
     }
 
+    /// Shows the guide until the user finishes it once. Someone who set everything up
+    /// before the guide remembered that counts as finished.
     func presentIfNeeded() {
         permissions.refresh()
-        guard !setupComplete else { return }
+        if setupComplete { settings.hasCompletedOnboarding = true }
+        guard !settings.hasCompletedOnboarding else { return }
         present()
     }
 
@@ -32,19 +35,22 @@ final class OnboardingController: ObservableObject {
         let view = OnboardingView(
             permissions: permissions,
             settings: settings,
-            onClose: { [weak self] in self?.close() },
+            startingAt: OnboardingView.Step.resuming(permissions: permissions, settings: settings),
+            onClose: { [weak self] in self?.finish() },
             onRelaunch: { OnboardingController.relaunch() })
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 580),
+            contentRect: NSRect(origin: .zero, size: OnboardingView.size),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
+        window.title = "Set Up \(AppInfo.displayName)"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.level = .floating
+        // A normal window, so System Settings can come in front of it while the user
+        // switches a permission on.
         window.center()
         window.contentView = NSHostingView(rootView: view)
         self.window = window
@@ -52,7 +58,8 @@ final class OnboardingController: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func close() {
+    private func finish() {
+        settings.hasCompletedOnboarding = true
         window?.orderOut(nil)
         window = nil
     }
@@ -60,15 +67,43 @@ final class OnboardingController: ObservableObject {
     static func relaunch() {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
-        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, _ in
+        // Quit only once the new copy is running, so a failed launch never leaves the
+        // user with no app at all.
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
+            if let error {
+                NSLog("Relaunch failed: \(error)")
+                return
+            }
             Task { @MainActor in NSApp.terminate(nil) }
         }
     }
 }
 
+/// A setup assistant in the macOS pattern: each step explains one thing, and its
+/// action sits in the footer's default slot, turning into Continue once it's done.
 struct OnboardingView: View {
+    static let size = NSSize(width: 460, height: 400)
+
     enum Step: Int, CaseIterable {
-        case welcome, microphone, screenRecording, vault, audio, done
+        case welcome, microphone, screenRecording, notesFolder, done
+
+        /// Where to pick up after a relaunch: the first thing still missing, or the
+        /// start for someone who hasn't been asked anything yet.
+        @MainActor
+        static func resuming(permissions: PermissionsManager, settings: Settings) -> Step {
+            if permissions.microphone == .unknown { return .welcome }
+            if !permissions.microphone.isGranted { return .microphone }
+            if !permissions.screenRecording.isGranted { return .screenRecording }
+            if !settings.hasOutputFolder { return .notesFolder }
+            return .done
+        }
+    }
+
+    /// The footer's trailing buttons for a step: an optional quiet one, and the one
+    /// prominent button that takes Return.
+    private struct Actions {
+        var secondary: (title: String, run: () -> Void)?
+        var primary: (title: String, run: () -> Void)
     }
 
     @ObservedObject var permissions: PermissionsManager
@@ -93,18 +128,18 @@ struct OnboardingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
             content
                 .id(step)
                 .transition(.opacity)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(28)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.horizontal, 32)
+                .padding(.top, 36)
+                .padding(.bottom, 20)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: step)
             Divider()
             footer
         }
-        .frame(width: 460, height: 580)
+        .frame(width: Self.size.width, height: Self.size.height)
         .onAppear { permissions.refresh() }
         // Grants happen in System Settings; pick them up when the user comes back.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -112,241 +147,204 @@ struct OnboardingView: View {
         }
     }
 
-    private var header: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "waveform")
-                .font(.system(size: 34))
-                .foregroundStyle(.tint)
-                .accessibilityHidden(true)
-            Text(AppInfo.displayName)
-                .font(.title2).bold()
-            Text("Records your huddles and calls, transcribes them locally, and saves notes to your vault.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 32)
-        .padding(.horizontal, 28)
-        .padding(.bottom, 20)
-    }
-
     @ViewBuilder
     private var content: some View {
         switch step {
         case .welcome: welcomeStep
-        case .microphone:
-            permissionStep(
-                icon: "mic.fill",
-                title: "Microphone",
-                why: "Captures your side of the conversation so your words appear in the transcript.",
-                status: permissions.microphone,
-                action: { await permissions.request(.microphone) })
-        case .screenRecording:
-            permissionStep(
-                icon: "rectangle.inset.filled.and.person.filled",
-                title: "Screen Recording",
-                why:
-                    "macOS routes system audio through the Screen Recording permission. It's how the app captures everyone else on the call. No video is ever recorded.",
-                status: permissions.screenRecording,
-                note: "After you allow it, the app must be relaunched for macOS to apply the change.",
-                action: { await permissions.request(.screenRecording) })
-        case .vault: vaultStep
-        case .audio: audioStep
+        case .microphone: microphoneStep
+        case .screenRecording: screenRecordingStep
+        case .notesFolder: notesFolderStep
         case .done: doneStep
         }
     }
 
     private var welcomeStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Two permissions, one time")
-                .font(.headline)
+        VStack(spacing: 14) {
+            Image(systemName: "waveform")
+                .font(.system(size: 40))
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+            Text(AppInfo.displayName)
+                .font(.title2).bold()
             Text(
-                "To record both sides of a call, macOS needs your permission for the microphone and for system audio. We'll walk through each and explain why."
+                "Records your calls and in-person meetings, transcribes them on your Mac, and saves each one as a markdown note."
             )
             .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
             Label(
-                "Everything is transcribed on-device. Audio never leaves your Mac. If you turn on cloud summaries, only the finished transcript text is sent to summarize.",
+                "Audio never leaves your Mac. If you turn on cloud summaries, only the finished transcript text is sent to Anthropic.",
                 systemImage: "lock.fill"
             )
             .font(.callout)
             .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
             .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
-            Spacer()
-        }
-    }
-
-    private func permissionStep(
-        icon: String, title: String, why: String,
-        status: PermissionsManager.Status, note: String? = nil,
-        action: @escaping () async -> Void
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
-                Image(systemName: icon).font(.system(size: 26)).foregroundStyle(.tint).frame(width: 40)
-                Text(title).font(.title3).bold()
-                Spacer()
-                statusPill(status)
-            }
-            Text(why)
+            .padding(.top, 6)
+            Text("Setup takes a minute: two permissions and a folder.")
+                .font(.callout)
                 .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            if let note {
-                Label(note, systemImage: "arrow.clockwise")
-                    .font(.callout)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer()
-            if status != .granted {
-                Button {
-                    Task { await action() }
-                } label: {
-                    Text("Grant \(title)").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-            } else {
-                Label("Granted", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .frame(maxWidth: .infinity)
-            }
-        }
-    }
-
-    private var vaultStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
-                Image(systemName: "folder.fill").font(.system(size: 26)).foregroundStyle(.tint).frame(width: 40)
-                Text("Vault").font(.title3).bold()
-                Spacer()
-                statusPill(settings.hasOutputFolder ? .granted : .denied, granted: "Set", pending: "Not set")
-            }
-            Text(
-                "Each call is saved here as a markdown note, one file per conversation. Point this at your Obsidian vault, or any folder you like."
-            )
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-            Spacer()
-            folderChoice(settings.outputFolderName, choose: settings.chooseOutputFolder)
-        }
-    }
-
-    private var audioStep: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
-                Image(systemName: "waveform.circle.fill").font(.system(size: 26)).foregroundStyle(.tint).frame(
-                    width: 40)
-                Text("Audio").font(.title3).bold()
-                Spacer()
-                Toggle("", isOn: $settings.keepAudio)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .accessibilityLabel("Keep audio recordings")
-            }
-            Text(settings.keepAudioExplanation)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if settings.keepAudio {
-                HStack(spacing: 8) {
-                    Text("Save to").foregroundStyle(.secondary)
-                    Spacer()
-                    statusPill(settings.audioFolderPath != nil ? .granted : .denied, granted: "Set", pending: "Not set")
-                }
-                folderChoice(settings.audioFolderName, choose: settings.chooseAudioFolder)
-                VStack(alignment: .leading, spacing: 6) {
-                    TextField("Filename format", text: $settings.audioFilenameFormat)
-                        .textFieldStyle(.roundedBorder)
-                    Text("Tokens: {date} {time} {source} {track}")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-        }
-    }
-
-    private var doneStep: some View {
-        VStack(spacing: 16) {
-            if !permissions.allGranted {
-                Image(systemName: "arrow.clockwise.circle.fill").font(.system(size: 48)).foregroundStyle(.orange)
-                Text("One more step").font(.title3).bold()
-                Text(
-                    "If you allowed Screen Recording, relaunch to apply it. Without it you can still record the room from the menu."
-                )
-                .foregroundStyle(.secondary).multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                Button("Relaunch Now", action: onRelaunch)
-                    .buttonStyle(.borderedProminent).controlSize(.large)
-            } else if let name = settings.outputFolderName {
-                Image(systemName: "checkmark.seal.fill").font(.system(size: 48)).foregroundStyle(.green)
-                Text("You're all set").font(.title3).bold()
-                Text(
-                    "Notes will be saved to \(name). Click the waveform in the menu bar to start recording, or turn on auto-detect to catch huddles automatically."
-                )
-                .foregroundStyle(.secondary).multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Image(systemName: "folder.badge.plus").font(.system(size: 48)).foregroundStyle(.orange)
-                Text("Almost there").font(.title3).bold()
-                Text("Choose where notes are saved and your first recording will land there automatically.")
-                    .foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Choose Vault Folder") { settings.chooseOutputFolder() }
-                    .buttonStyle(.borderedProminent).controlSize(.large)
-            }
-            Spacer()
         }
         .frame(maxWidth: .infinity)
     }
 
-    /// The chosen folder with a way to change it, or one prominent button to pick one.
-    @ViewBuilder
-    private func folderChoice(_ name: String?, choose: @escaping () -> Void) -> some View {
-        if let name {
-            HStack {
-                Label(name, systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .lineLimit(1).truncationMode(.middle)
-                Spacer()
-                Button("Change", action: choose)
+    private var microphoneStep: some View {
+        stepLayout(icon: "mic.fill", title: "Microphone", allowed: permissions.microphone.isGranted) {
+            Text("Records your side of a call, and everyone in the room when you record in person.")
+            if permissions.microphone == .denied {
+                Caution(
+                    "Microphone access is off. Turn on \(AppInfo.displayName) in System Settings, under Privacy & Security, Microphone."
+                )
+                .foregroundStyle(.primary)
             }
-        } else {
-            Button(action: choose) {
-                Text("Choose Folder").frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
         }
     }
 
-    private func move(by offset: Int) {
-        if let next = Step(rawValue: step.rawValue + offset) { step = next }
+    private var screenRecordingStep: some View {
+        stepLayout(
+            icon: "rectangle.inset.filled.and.person.filled", title: "Screen Recording",
+            allowed: permissions.screenRecording.isGranted
+        ) {
+            Text(
+                "macOS hands out call audio through the Screen Recording permission. It's how the app hears everyone else on a call. No video is ever recorded."
+            )
+            // Plain secondary text, as in the menu and Settings; Relaunch Now is the
+            // footer's default button.
+            if permissions.screenRecordingRequested && !permissions.screenRecording.isGranted {
+                Text(Copy.relaunchHint)
+            } else {
+                Text("Only calls need it. You can skip this and still record in person.")
+            }
+        }
+    }
+
+    private var notesFolderStep: some View {
+        stepLayout(icon: "folder.fill", title: "Notes Folder") {
+            Text(
+                "Each recording becomes a markdown note in this folder. Point it at your Obsidian vault, or any folder you like."
+            )
+            if settings.hasOutputFolder {
+                FolderChoice(path: settings.outputFolderPath, choose: settings.chooseOutputFolder, spread: true)
+                    .foregroundStyle(.primary)
+                    .padding(10)
+                    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+            }
+        }
+    }
+
+    private var doneStep: some View {
+        VStack(spacing: 14) {
+            let callsReady = permissions.allGranted
+            Image(systemName: callsReady ? "checkmark.seal.fill" : "person.2.fill")
+                .font(.system(size: 44))
+                .foregroundStyle(callsReady ? AnyShapeStyle(Color.green) : AnyShapeStyle(.tint))
+                .accessibilityHidden(true)
+            Text(callsReady ? "You're all set" : "Ready to record in person").font(.title3).bold()
+            Text(
+                callsReady
+                    ? "Each recording becomes a note in \u{201C}\(settings.outputFolderName ?? "your notes folder")\u{201D}. Click the waveform in the menu bar to start recording."
+                    : "To record calls too, allow Screen Recording from the menu or Settings, then relaunch."
+            )
+            .foregroundStyle(.secondary).multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            // Detection only offers calls, so it's offered once calls can be recorded.
+            if callsReady {
+                VStack(alignment: .leading, spacing: 6) {
+                    TrailingSwitch(title: "Auto-detect calls", isOn: $settings.autoDetect)
+                    Text(Copy.autoDetectExplanation)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(12)
+                .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+                .padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Icon, title and, for a permission, whether it's allowed on one line; then the
+    /// explanation.
+    private func stepLayout<Body: View>(
+        icon: String, title: String, allowed: Bool? = nil,
+        @ViewBuilder body: () -> Body
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: icon).font(.title).foregroundStyle(.tint).frame(width: 40)
+                    .accessibilityHidden(true)
+                Text(title).font(.title3).bold()
+                Spacer()
+                if let allowed {
+                    PermissionStatus(
+                        name: title, allowed: allowed,
+                        pendingRelaunch: title == "Screen Recording" && permissions.screenRecordingRequested
+                    )
+                    .font(.callout)
+                }
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                body()
+            }
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func next() {
+        if let following = Step(rawValue: step.rawValue + 1) { step = following }
+    }
+
+    private var actions: Actions {
+        switch step {
+        case .welcome:
+            return Actions(primary: ("Get Started", next))
+        case .microphone:
+            if permissions.microphone.isGranted { return Actions(primary: ("Continue", next)) }
+            let title = permissions.microphone == .denied ? "Open System Settings" : "Allow Microphone…"
+            return Actions(primary: (title, { Task { await permissions.request(.microphone) } }))
+        case .screenRecording:
+            if permissions.screenRecording.isGranted { return Actions(primary: ("Continue", next)) }
+            if permissions.screenRecordingRequested {
+                return Actions(secondary: ("Later", next), primary: ("Relaunch Now", onRelaunch))
+            }
+            return Actions(
+                secondary: ("Skip", next),
+                primary: (
+                    "Allow Screen Recording…",
+                    {
+                        Task { await permissions.request(.screenRecording) }
+                    }
+                ))
+        case .notesFolder:
+            return settings.hasOutputFolder
+                ? Actions(primary: ("Continue", next))
+                : Actions(primary: ("Choose Notes Folder…", settings.chooseOutputFolder))
+        case .done:
+            return Actions(primary: ("Done", onClose))
+        }
     }
 
     private var footer: some View {
-        HStack {
+        let actions = actions
+        return HStack {
             if step != .welcome {
-                Button("Back") { move(by: -1) }
+                Button("Back") { if let previous = Step(rawValue: step.rawValue - 1) { step = previous } }
             }
             Spacer()
-            stepDots
-            Spacer()
-            if step != .done {
-                Button(step == .welcome ? "Get Started" : "Continue") { move(by: 1) }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(step == .microphone && permissions.microphone != .granted)
-            } else {
-                Button("Done", action: onClose)
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
+            if let secondary = actions.secondary {
+                Button(secondary.title, action: secondary.run)
             }
+            Button(actions.primary.title, action: actions.primary.run)
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
         }
         .padding(20)
+        // Centred on the footer, not between buttons whose widths change per step, so
+        // the progress dots never move.
+        .overlay { stepDots }
     }
 
     private var stepDots: some View {
@@ -359,20 +357,5 @@ struct OnboardingView: View {
         }
         .accessibilityElement()
         .accessibilityLabel("Step \(step.rawValue + 1) of \(Step.allCases.count)")
-    }
-
-    private func statusPill(
-        _ status: PermissionsManager.Status,
-        granted: String = "Granted",
-        pending: String = "Not granted"
-    ) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: status == .granted ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(status == .granted ? .green : .secondary)
-            Text(status == .granted ? granted : pending)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
     }
 }

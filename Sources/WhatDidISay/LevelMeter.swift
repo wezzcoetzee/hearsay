@@ -43,9 +43,9 @@ struct ChannelMeter: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: symbol)
-                .font(.system(size: 9, weight: .medium))
+                .font(.caption2.weight(.medium))
                 .foregroundStyle(isSilent ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
-                .frame(width: 11)
+                .frame(width: 13)
             LevelMeter(level: level, segments: segments)
         }
         .accessibilityElement(children: .ignore)

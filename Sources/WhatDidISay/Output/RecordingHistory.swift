@@ -8,6 +8,11 @@ struct HistoryEntry: Codable, Identifiable {
     let notePath: String?
     let recordingPath: String?
     let segmentCount: Int
+    /// Missing from entries written before durations were kept.
+    let duration: TimeInterval?
+    /// Who was named in review, so calls from the same app can be told apart. Missing
+    /// from older entries.
+    let participants: [String]?
 
     var noteURL: URL? { notePath.map { URL(fileURLWithPath: $0) } }
 }
@@ -33,10 +38,12 @@ final class RecordingHistory: ObservableObject {
         let entry = HistoryEntry(
             id: session.id,
             date: session.startedAt,
-            source: session.source.displayName,
+            source: session.source.recordingName,
             notePath: session.noteURL?.path,
             recordingPath: session.directory.path,
-            segmentCount: session.segmentCount
+            segmentCount: session.segmentCount,
+            duration: session.duration,
+            participants: session.participants.filter { $0 != Speaker.me.label }
         )
         entries.insert(entry, at: 0)
         if entries.count > maxEntries {
@@ -95,10 +102,3 @@ private extension JSONDecoder {
         return decoder
     }
 }
-
-#if DEBUG
-    extension RecordingHistory {
-        /// In memory only: never saved over the user's real history.
-        func seedForScreenshots(_ entries: [HistoryEntry]) { self.entries = entries }
-    }
-#endif

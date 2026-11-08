@@ -75,9 +75,14 @@ final class ScreenshotFixture {
 
     func addHistory() throws {
         let notes = try folder("Notes")
-        let calls: [(RecordingSource, Int)] = [(.inPerson, 60 * 22), (.teams, 60 * 4), (.googleMeet, 95), (.slack, 20)]
-        for (source, minutesAgo) in calls {
+        let calls: [(RecordingSource, Int, [String])] = [
+            (.inPerson, 60 * 22, ["Me", "Dana", "Sam", "Lee"]),
+            (.teams, 60 * 4, ["Me", "Ana Ruiz", "Ben Ode", "Cy Tan", "Dee Moss", "Eli Ray", "Fay Lu"]),
+            (.googleMeet, 95, ["Me", "Tom Hill", "Jo Park"]), (.slack, 20, ["Me", "Priya Shah", "Marcus Lee"]),
+        ]
+        for (source, minutesAgo, people) in calls {
             let call = session(source, minutesAgo: minutesAgo, lasting: 25)
+            call.participants = people
             let note = notes.appendingPathComponent("\(source.rawValue).md")
             FileManager.default.createFile(atPath: note.path, contents: Data())
             call.noteURL = note
@@ -92,6 +97,8 @@ final class ScreenshotFixture {
     }
 
     func cleanUp() {
+        // Deletes the throwaway keychain item a cloud scene may have written.
+        settings.anthropicAPIKey = ""
         UserDefaults.standard.removePersistentDomain(forName: suiteName)
         try? FileManager.default.removeItem(at: root)
     }

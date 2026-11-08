@@ -4,12 +4,14 @@ import SwiftUI
 
 @MainActor
 final class RecordingControlPanelController: ObservableObject {
-    @Published private(set) var isMinimized = false
+    @Published private(set) var isCollapsed = false
     /// When the current recording started; `nil` while nothing is recording.
     @Published private(set) var since: Date?
     /// The recorder's capture warning, shown here because the panel is what the user
     /// is looking at mid-call.
-    @Published var warning: String?
+    @Published var warning: CaptureIssue?
+    /// What is being recorded, so the panel names it.
+    @Published private(set) var source: RecordingSource = .manual
 
     var onStop: (() -> Void)?
 
@@ -25,9 +27,10 @@ final class RecordingControlPanelController: ObservableObject {
         self.levels = levels
     }
 
-    func update(for state: RecordingController.State) {
+    func update(for state: RecordingController.State, source: RecordingSource) {
         if case .recording(let since) = state {
             self.since = since
+            self.source = source
         } else {
             since = nil
         }
@@ -51,6 +54,7 @@ final class RecordingControlPanelController: ObservableObject {
         // The panel owns its size so it can animate between the two layouts.
         hosting.sizingOptions = []
         let panel = NSPanel.floating(contentView: hosting, size: size, styleMask: [.borderless])
+        panel.title = "Recording panel"
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -64,20 +68,21 @@ final class RecordingControlPanelController: ObservableObject {
     }
 
     /// Cross-fades the layouts while the window resizes on the same curve. The corner
-    /// nearest the screen edge stays put, so a panel parked top-right stays flush.
-    func toggleMinimized() {
+    /// nearest the screen's edges stays put, so a panel parked in a corner stays flush.
+    func toggleCollapsed() {
         let animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         withAnimation(animates ? .easeInOut(duration: Self.resizeDuration) : nil) {
-            isMinimized.toggle()
+            isCollapsed.toggle()
         }
         guard let panel else { return }
 
         let current = panel.frame
         let screen = panel.screen?.visibleFrame ?? current
         let pinsRight = current.midX > screen.midX
+        let pinsBottom = current.midY < screen.midY
         let target = NSRect(
             x: pinsRight ? current.maxX - size.width : current.minX,
-            y: current.maxY - size.height,
+            y: pinsBottom ? current.minY : current.maxY - size.height,
             width: size.width, height: size.height)
         NSAnimationContext.runAnimationGroup { context in
             context.duration = animates ? Self.resizeDuration : 0
@@ -89,11 +94,11 @@ final class RecordingControlPanelController: ObservableObject {
         }
     }
 
-    private var size: NSSize { isMinimized ? Self.minimizedSize : Self.expandedSize }
+    private var size: NSSize { isCollapsed ? Self.collapsedSize : Self.expandedSize }
 
     private static let resizeDuration = 0.2
-    static let expandedSize = NSSize(width: 252, height: 92)
-    static let minimizedSize = NSSize(width: 160, height: 40)
+    static let expandedSize = NSSize(width: 292, height: 92)
+    static let collapsedSize = NSSize(width: 168, height: 40)
 }
 
 struct RecordingControlPanelView: View {
@@ -111,8 +116,8 @@ struct RecordingControlPanelView: View {
         // Fills the window rather than sizing to the content, so the material and
         // border resize with the panel and the two layouts can overlap mid-fade.
         ZStack(alignment: .topLeading) {
-            if controller.isMinimized {
-                minimized.transition(.opacity)
+            if controller.isCollapsed {
+                collapsed.transition(.opacity)
             } else {
                 expanded.transition(.opacity)
             }
@@ -128,21 +133,16 @@ struct RecordingControlPanelView: View {
             HStack(spacing: 10) {
                 RecordingDot()
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(status)
-                        .font(.caption)
-                        .foregroundStyle(isHealthy ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
-                        .help(controller.warning ?? "")
+                    title
                     timer.font(.title3).monospacedDigit().foregroundStyle(.primary)
                 }
                 Spacer(minLength: 4)
-                Button {
-                    controller.toggleMinimized()
-                } label: {
-                    Image(systemName: "minus")
+                IconButton(
+                    symbol: "arrow.down.right.and.arrow.up.left",
+                    label: "Collapse recording panel", help: "Collapse"
+                ) {
+                    controller.toggleCollapsed()
                 }
-                .buttonStyle(.borderless)
-                .help("Minimize")
-                .accessibilityLabel("Minimize control panel")
 
                 Button {
                     controller.onStop?()
@@ -158,15 +158,11 @@ struct RecordingControlPanelView: View {
             HStack(spacing: 14) {
                 ChannelMeter(
                     symbol: "mic.fill", name: "Microphone level",
-                    level: levels.mic, isSilent: levels.micSilent
-                )
-                .help(levels.micSilent ? "No sound from your microphone" : "Microphone level")
+                    level: levels.mic, isSilent: levels.micSilent)
                 if levels.tracksSystemAudio {
                     ChannelMeter(
                         symbol: "speaker.wave.2.fill", name: "Call audio level",
-                        level: levels.system, isSilent: false
-                    )
-                    .help("Call audio level")
+                        level: levels.system, isSilent: false)
                 }
                 Spacer(minLength: 0)
             }
@@ -178,34 +174,62 @@ struct RecordingControlPanelView: View {
             height: RecordingControlPanelController.expandedSize.height)
     }
 
-    private var minimized: some View {
+    /// The source while all is well; the problem, flagged, when something isn't.
+    @ViewBuilder
+    private var title: some View {
+        if let issue {
+            Label {
+                Text(issue.title).lineLimit(1)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            }
+            // The panel's one sign that part of the call is being missed: a size up
+            // from the source name it replaces.
+            .font(.subheadline.weight(.medium))
+            .help("\(issue.title). \(issue.detail)")
+            .accessibilityHint(issue.detail)
+        } else {
+            Text(controller.source.recordingName)
+                .font(.caption).foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+
+    private var collapsed: some View {
         Button {
-            controller.toggleMinimized()
+            controller.toggleCollapsed()
         } label: {
             HStack(spacing: 8) {
                 RecordingDot()
                 timer.font(.callout).monospacedDigit().foregroundStyle(.primary)
-                LevelMeter(level: max(levels.mic, levels.system), segments: 5, height: 10)
+                if issue != nil {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                } else {
+                    LevelMeter(level: max(levels.mic, levels.system), segments: 5, height: 10)
+                }
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.up").font(.caption2).foregroundStyle(.secondary)
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12)
             .frame(
-                width: RecordingControlPanelController.minimizedSize.width,
-                height: RecordingControlPanelController.minimizedSize.height
+                width: RecordingControlPanelController.collapsedSize.width,
+                height: RecordingControlPanelController.collapsedSize.height
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Expand recording controls")
-        .accessibilityLabel("Expand recording controls")
+        .help(issue.map { "\($0.title). \($0.detail)" } ?? "Expand recording panel")
+        .accessibilityLabel("Expand recording panel")
+        .accessibilityValue(issue?.title ?? "")
     }
 
-    private var isHealthy: Bool { controller.warning == nil && !levels.micSilent }
-
-    private var status: String {
-        if controller.warning != nil { return "Audio interrupted" }
-        return levels.micSilent ? "No mic input" : "Recording"
+    /// What's wrong right now: a track that stopped, else a mic that hears nothing.
+    /// Shown in both layouts, so collapsing never hides a problem.
+    private var issue: CaptureIssue? {
+        controller.warning ?? (levels.micSilent ? .micSilent : nil)
     }
 
     @ViewBuilder
@@ -214,7 +238,7 @@ struct RecordingControlPanelView: View {
             TimelineView(.periodic(from: since, by: 1)) { context in
                 let elapsed = Int(context.date.timeIntervalSince(since))
                 Text(ElapsedTime.clock(elapsed))
-                    .accessibilityLabel("Recording, \(ElapsedTime.spoken(elapsed))")
+                    .accessibilityLabel("Recording \(controller.source.recordingName), \(ElapsedTime.spoken(elapsed))")
             }
         } else {
             Text("00:00").monospacedDigit()
@@ -222,13 +246,15 @@ struct RecordingControlPanelView: View {
     }
 }
 
-/// Deliberately still: anything that moves for the whole call repaints the panel the
-/// whole call. The ticking timer and the meters already show it's live.
+/// The same glyph as the menu's recording row and the menu-bar icon, so "recording"
+/// looks one way everywhere. Deliberately still: anything that moves for the whole
+/// call repaints the panel the whole call. The ticking timer and the meters already
+/// show it's live.
 private struct RecordingDot: View {
     var body: some View {
-        Circle()
-            .fill(.red)
-            .frame(width: 10, height: 10)
+        Image(systemName: "record.circle.fill")
+            .font(.callout)
+            .foregroundStyle(.red)
             .accessibilityHidden(true)
     }
 }
