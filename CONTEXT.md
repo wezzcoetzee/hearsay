@@ -12,6 +12,7 @@ and architecture reviews.
 - **Transcript** — speaker-labelled segments produced from the recorded tracks.
   (`[TranscriptSegment]`)
 - **Note** — the markdown file written to the vault: front matter, summary, transcript.
+  Titled and named by the summary's one-line topic when there is one. (`MarkdownWriter`)
 - **Vault** — the user's chosen output folder (often an Obsidian vault).
 
 ## Modules
