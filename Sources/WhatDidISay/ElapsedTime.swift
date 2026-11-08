@@ -13,6 +13,12 @@ enum ElapsedTime {
             : String(format: "%02d:%02d", minutes, rest)
     }
 
+    /// A call's length at a glance in lists, e.g. "25 min" or "1 hr, 5 min".
+    static func length(_ seconds: TimeInterval) -> String {
+        Duration.seconds(max(60, seconds))
+            .formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
+    }
+
     /// VoiceOver phrasing, e.g. "1 hour, 5 minutes, 12 seconds".
     static func spoken(_ seconds: Int) -> String {
         Duration.seconds(max(0, seconds))

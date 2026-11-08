@@ -18,6 +18,9 @@ struct VoiceCandidate: Equatable, Sendable {
 struct RosterReview: Equatable, Sendable {
     let voices: [VoiceCandidate]
     let others: [String]
+    /// Which recording this is, e.g. "Slack Huddle · 3 Nov at 09:21 · 25 min", so a
+    /// dialog that opens minutes after the call says what it's asking about.
+    var context = ""
 
     /// Distinct voices in the order they first speak, each carrying its opening line.
     static func voices(in segments: [TranscriptSegment]) -> [VoiceCandidate] {

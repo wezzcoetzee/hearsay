@@ -61,7 +61,7 @@ extension ScreenshotCatalog {
         AnyView(
             MenuContent(
                 recorder: f.recorder, settings: f.settings, permissions: f.permissions,
-                history: f.history, levels: f.recorder.levels, onboarding: f.onboarding))
+                history: f.history, levels: f.recorder.levels))
     }
 
     /// Twelve minutes and thirty-four seconds into a call.
@@ -97,16 +97,14 @@ extension ScreenshotCatalog {
         },
         Scene(surface: "Menu", id: "recording-mic-silent", caption: "Recording, but the microphone hears nothing") {
             f in
-            f.recorder.stageForScreenshots(.recording(since: midCall))
+            f.recorder.stageForScreenshots(.recording(since: midCall), lastSource: .teams)
             f.recorder.levels.stageForScreenshots(mic: 0, system: 0.38, micSilent: true)
             return menu(f)
         },
         Scene(surface: "Menu", id: "recording-interrupted", caption: "Call audio stopped mid-call") { f in
             f.recorder.stageForScreenshots(
-                .recording(since: midCall),
-                captureWarning:
-                    "Call audio stopped recording, so the rest of the call may be missing. Stop and start again to recover."
-            )
+                .recording(since: midCall), lastSource: .slack,
+                captureWarning: .callAudioStopped)
             f.recorder.levels.stageForScreenshots(mic: 0.55, system: 0)
             return menu(f)
         },
@@ -116,17 +114,18 @@ extension ScreenshotCatalog {
         },
         Scene(surface: "Menu", id: "transcribing", caption: "Transcribing on-device") { f in
             try f.addHistory()
-            f.recorder.stageForScreenshots(.processing(.transcribing))
+            f.recorder.stageForScreenshots(.processing(.transcribing), lastSource: .googleMeet)
             return menu(f)
         },
         Scene(surface: "Menu", id: "reviewing", caption: "Waiting on the participant review") { f in
-            f.recorder.stageForScreenshots(.processing(.reviewing))
+            f.recorder.stageForScreenshots(.processing(.reviewing), lastSource: .slack)
             return menu(f)
         },
         Scene(surface: "Menu", id: "summarizing-cloud", caption: "Summarizing with the cloud backend") { f in
             f.settings.summaryEnabled = true
             f.settings.summaryBackend = .cloud
-            f.recorder.stageForScreenshots(.processing(.summarizing))
+            f.settings.anthropicAPIKey = "sk-ant-screenshot"
+            f.recorder.stageForScreenshots(.processing(.summarizing), lastSource: .teams)
             return menu(f)
         },
         Scene(surface: "Menu", id: "saved", caption: "Note saved") { f in
@@ -137,44 +136,53 @@ extension ScreenshotCatalog {
         },
         Scene(surface: "Menu", id: "saved-with-warning", caption: "Note saved, but the audio couldn't be archived") {
             f in
+            f.settings.keepAudio = true
             f.recorder.stageForScreenshots(
                 .idle,
                 lastSave: .init(
                     noteURL: try f.noteURL(), folderName: "Notes",
-                    warning:
-                        "No audio folder is set, so the audio is kept in Application Support. Choose one in Settings."))
+                    warning: "Couldn't copy the audio to Call Audio. It's kept in the app's Library folder."))
             return menu(f)
         },
         Scene(
-            surface: "Menu", id: "failed-to-start", caption: "A call couldn't start without Screen Recording",
+            surface: "Menu", id: "no-screen-recording", caption: "Microphone only: the main button records in person",
             fixture: { try ScreenshotFixture(screenRecording: .denied) }
-        ) { f in
+        ) { menu($0) },
+        Scene(surface: "Menu", id: "failed-to-start", caption: "Capture couldn't start") { f in
             f.recorder.stageForScreenshots(
-                .failed("Grant Microphone and Screen Recording, then relaunch."),
+                .failed("Couldn't start recording. Another app may be using the microphone or system audio."),
                 failedToStart: true, lastSource: .slack)
+            return menu(f)
+        },
+        Scene(
+            surface: "Menu", id: "needs-attention-many",
+            caption: "Five recordings waiting: three shown, Show All for the rest"
+        ) { f in
+            let pending = (0..<5).map { f.session(.slack, minutesAgo: 60 * (2 + $0), lasting: 10 + $0) }
+            pending[0].setAsideReason = RecordingController.waitingForNames
+            f.recorder.stageForScreenshots(.idle, needsAttention: pending)
             return menu(f)
         },
         Scene(surface: "Menu", id: "needs-attention", caption: "Recordings that never became notes") { f in
             let transcribed = f.session(.googleMeet, minutesAgo: 50, lasting: 31)
             try transcribed.saveTranscript([])
-            let pending = [
-                transcribed,
-                f.session(.slack, minutesAgo: 60 * 3, lasting: 12),
-                f.session(.inPerson, minutesAgo: 60 * 26, lasting: 48),
-            ]
-            f.recorder.stageForScreenshots(
-                .failed("Couldn't finish processing this recording. It's under Needs attention."),
-                needsAttention: pending)
+            let failed = f.session(.slack, minutesAgo: 60 * 3, lasting: 12)
+            failed.setAsideReason = "failed while transcribing"
+            let pending = [transcribed, failed, f.session(.inPerson, minutesAgo: 60 * 26, lasting: 48)]
+            f.recorder.stageForScreenshots(.idle, needsAttention: pending)
             return menu(f)
         },
     ]
 
-    private static func panel(_ f: ScreenshotFixture, minimized: Bool = false, warning: String? = nil) -> AnyView {
+    private static func panel(
+        _ f: ScreenshotFixture, source: RecordingSource = .slack,
+        collapsed: Bool = false, warning: CaptureIssue? = nil
+    ) -> AnyView {
         let controller = RecordingControlPanelController(levels: f.recorder.levels)
         controller.warning = warning
         controller.isEnabled = false  // keep the real NSPanel off screen
-        controller.update(for: .recording(since: midCall))
-        if minimized { controller.toggleMinimized() }
+        controller.update(for: .recording(since: midCall), source: source)
+        if collapsed { controller.toggleCollapsed() }
         return AnyView(RecordingControlPanelView(controller: controller))
     }
 
@@ -183,9 +191,9 @@ extension ScreenshotCatalog {
             f.recorder.levels.stageForScreenshots(mic: 0.62, system: 0.45)
             return panel(f)
         },
-        Scene(surface: "Floating panel", id: "room", caption: "Recording the room") { f in
+        Scene(surface: "Floating panel", id: "room", caption: "Recording in person") { f in
             f.recorder.levels.stageForScreenshots(mic: 0.5, system: 0, tracksSystemAudio: false)
-            return panel(f)
+            return panel(f, source: .inPerson)
         },
         Scene(surface: "Floating panel", id: "mic-silent", caption: "No sound from the microphone") { f in
             f.recorder.levels.stageForScreenshots(mic: 0, system: 0.4, micSilent: true)
@@ -193,11 +201,15 @@ extension ScreenshotCatalog {
         },
         Scene(surface: "Floating panel", id: "interrupted", caption: "Call audio stopped mid-call") { f in
             f.recorder.levels.stageForScreenshots(mic: 0.55, system: 0)
-            return panel(f, warning: "Call audio stopped recording.")
+            return panel(f, warning: .callAudioStopped)
         },
-        Scene(surface: "Floating panel", id: "minimized", caption: "Minimized") { f in
+        Scene(surface: "Floating panel", id: "collapsed", caption: "Collapsed") { f in
             f.recorder.levels.stageForScreenshots(mic: 0.55, system: 0.3)
-            return panel(f, minimized: true)
+            return panel(f, collapsed: true)
+        },
+        Scene(surface: "Floating panel", id: "collapsed-issue", caption: "Collapsed, with the microphone silent") { f in
+            f.recorder.levels.stageForScreenshots(mic: 0, system: 0.3, micSilent: true)
+            return panel(f, collapsed: true)
         },
     ]
 
@@ -217,12 +229,31 @@ extension ScreenshotCatalog {
         Scene(surface: "Call prompt", id: "teams-cloud", caption: "Teams call detected, cloud summaries on") { _ in
             prompt(.teams, countdown: 4, cloud: true)
         },
+        Scene(surface: "Call prompt", id: "busy", caption: "Call detected while the last recording waits for names") {
+            _ in
+            let controller = ConfirmationController()
+            controller.stageForScreenshots(source: .slack, countdown: 12, cloudActive: false, blocker: .awaitingNames)
+            return AnyView(ConfirmationView(controller: controller))
+        },
+        Scene(
+            surface: "Call prompt", id: "start-failed", caption: "Start Recording was clicked but capture didn't start"
+        ) { _ in
+            let controller = ConfirmationController()
+            controller.stageForScreenshots(
+                source: .slack, countdown: 15, cloudActive: false,
+                blocker:
+                    .startFailed("Couldn't start recording. Another app may be using the microphone or system audio."))
+            return AnyView(ConfirmationView(controller: controller))
+        },
     ]
 
-    private static func review(_ voices: [VoiceCandidate], seen: [String] = [], trusted: Bool = true) -> AnyView {
+    private static func review(
+        _ voices: [VoiceCandidate], seen: [String] = [], trusted: Bool = true,
+        context: String = "Slack Huddle · 3 Nov at 09:21 · 25 min"
+    ) -> AnyView {
         AnyView(
             ParticipantReviewView(
-                request: RosterReview(voices: voices, others: seen),
+                request: RosterReview(voices: voices, others: seen, context: context),
                 accessibilityTrusted: trusted, onDone: { _ in }, onDelete: {}))
     }
 
@@ -237,16 +268,20 @@ extension ScreenshotCatalog {
                     VoiceCandidate(label: "Speaker 1", suggestion: "", sample: "Can we move the launch to Thursday?"),
                     VoiceCandidate(
                         label: "Speaker 2", suggestion: "", sample: "Thursday works if design signs off today."),
-                ], seen: ["Priya Shah", "Marcus Lee", "#launch-planning"])
+                ], seen: ["Priya Shah", "Marcus Lee"])
         },
         Scene(surface: "Participant review", id: "in-person", caption: "After recording the room: every voice diarized")
         { _ in
-            review([
-                VoiceCandidate(label: "Speaker 1", suggestion: "", sample: "Okay, quick round of updates."),
-                VoiceCandidate(label: "Speaker 2", suggestion: "", sample: "The migration finished overnight."),
-                VoiceCandidate(
-                    label: "Speaker 3", suggestion: "", sample: "I still need a reviewer for the API change."),
-            ])
+            review(
+                [
+                    VoiceCandidate(label: "Speaker 1", suggestion: "", sample: "Okay, quick round of updates."),
+                    VoiceCandidate(label: "Speaker 2", suggestion: "", sample: "The migration finished overnight."),
+                    VoiceCandidate(
+                        label: "Speaker 3", suggestion: "",
+                        sample:
+                            "I still need a reviewer for the API change, and someone to own the rollout plan once it lands."
+                    ),
+                ], context: "In Person · 2 Nov at 11:41 · 48 min")
         },
         Scene(
             surface: "Participant review", id: "accessibility-tip",
@@ -275,40 +310,52 @@ extension ScreenshotCatalog {
             onboarding($0, .microphone)
         },
         Scene(
+            surface: "Onboarding", id: "2-microphone-denied", caption: "Microphone refused earlier",
+            fixture: { try ScreenshotFixture(microphone: .denied, screenRecording: .denied, vault: false) }
+        ) {
+            onboarding($0, .microphone)
+        },
+        Scene(
             surface: "Onboarding", id: "2-microphone-granted", caption: "Microphone granted",
             fixture: { try ScreenshotFixture(screenRecording: .denied, vault: false) }
         ) { onboarding($0, .microphone) },
         Scene(
-            surface: "Onboarding", id: "3-screen-recording", caption: "Screen Recording, needs granting",
+            surface: "Onboarding", id: "3-screen-recording", caption: "Screen Recording, not yet asked",
             fixture: { try ScreenshotFixture(screenRecording: .denied, vault: false) }
         ) { onboarding($0, .screenRecording) },
         Scene(
-            surface: "Onboarding", id: "4-vault", caption: "Vault, not chosen",
-            fixture: { try ScreenshotFixture(vault: false) }
-        ) { onboarding($0, .vault) },
-        Scene(surface: "Onboarding", id: "4-vault-set", caption: "Vault chosen") { onboarding($0, .vault) },
-        Scene(surface: "Onboarding", id: "5-audio", caption: "Audio, deleted after each note") {
-            onboarding($0, .audio)
+            surface: "Onboarding", id: "3-screen-recording-relaunch",
+            caption: "Screen Recording asked for, waiting on a relaunch",
+            fixture: { try ScreenshotFixture(screenRecording: .denied, vault: false) }
+        ) {
+            $0.permissions.stageScreenRecordingRequested()
+            return onboarding($0, .screenRecording)
         },
-        Scene(surface: "Onboarding", id: "5-audio-kept", caption: "Audio kept in a chosen folder") { f in
-            f.settings.keepAudio = true
-            f.settings.useAudioFolder(try f.folder("Call Audio"))
-            return onboarding(f, .audio)
-        },
-        Scene(surface: "Onboarding", id: "6-done", caption: "All set") { onboarding($0, .done) },
         Scene(
-            surface: "Onboarding", id: "6-done-relaunch", caption: "Screen Recording needs a relaunch",
+            surface: "Onboarding", id: "4-notes-folder", caption: "Notes folder, not chosen",
+            fixture: { try ScreenshotFixture(vault: false) }
+        ) { onboarding($0, .notesFolder) },
+        Scene(surface: "Onboarding", id: "4-notes-folder-set", caption: "Notes folder chosen") {
+            onboarding($0, .notesFolder)
+        },
+        Scene(surface: "Onboarding", id: "5-done", caption: "All set") { onboarding($0, .done) },
+        Scene(
+            surface: "Onboarding", id: "5-done-in-person", caption: "Finished having skipped Screen Recording",
             fixture: { try ScreenshotFixture(screenRecording: .denied) }
-        ) { onboarding($0, .done) },
-        Scene(
-            surface: "Onboarding", id: "6-done-no-folder", caption: "Finished without a vault",
-            fixture: { try ScreenshotFixture(vault: false) }
         ) { onboarding($0, .done) },
     ]
 
     static let settingsScenes: [Scene] = [
+        Scene(
+            surface: "Settings", id: "screen-recording-pending",
+            caption: "Screen Recording asked for, waiting on a relaunch",
+            fixture: { try ScreenshotFixture(screenRecording: .denied) }
+        ) { f in
+            f.permissions.stageScreenRecordingRequested()
+            return AnyView(SettingsView(settings: f.settings, permissions: f.permissions, recorder: f.recorder))
+        },
         Scene(surface: "Settings", id: "default", caption: "Defaults") { f in
-            AnyView(SettingsView(settings: f.settings))
+            AnyView(SettingsView(settings: f.settings, permissions: f.permissions, recorder: f.recorder))
         },
         Scene(
             surface: "Settings", id: "local-summary", caption: "Local summaries through Ollama, keeping audio",
@@ -317,7 +364,7 @@ extension ScreenshotCatalog {
             f.settings.summaryEnabled = true
             f.settings.keepAudio = true
             f.settings.useAudioFolder(try f.folder("Call Audio"))
-            return AnyView(SettingsView(settings: f.settings))
+            return AnyView(SettingsView(settings: f.settings, permissions: f.permissions, recorder: f.recorder))
         },
         Scene(
             surface: "Settings", id: "cloud-summary", caption: "Cloud summaries through Anthropic",
@@ -325,9 +372,10 @@ extension ScreenshotCatalog {
         ) { f in
             f.settings.summaryEnabled = true
             f.settings.summaryBackend = .cloud
+            f.settings.anthropicAPIKey = "sk-ant-screenshot"
             f.settings.hasAcknowledgedCloud = true
             f.settings.diarize = true
-            return AnyView(SettingsView(settings: f.settings))
+            return AnyView(SettingsView(settings: f.settings, permissions: f.permissions, recorder: f.recorder))
         },
     ]
 }

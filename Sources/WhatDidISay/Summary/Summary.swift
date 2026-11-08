@@ -9,6 +9,9 @@ protocol Summarizer: Sendable {
 struct NoteSummary: Equatable, Sendable {
     var topic: String?
     var markdown: String
+    /// Why there's no real summary, in plain words, when the summarizer couldn't make
+    /// one. The menu shows it on the saved note, so the user hears before opening it.
+    var failure: String?
 
     private static let topicPrefix = "topic:"
 
@@ -30,9 +33,10 @@ struct NoteSummary: Equatable, Sendable {
         )
     }
 
-    init(topic: String?, markdown: String) {
+    init(topic: String?, markdown: String, failure: String? = nil) {
         self.topic = topic
         self.markdown = markdown
+        self.failure = failure
     }
 }
 
@@ -50,12 +54,25 @@ enum Summary {
         } catch {
             if Task.isCancelled { return nil }
             NSLog("Summary failed: \(error)")
-            return unavailable(error.localizedDescription)
+            return unavailable(plainReason(for: error, backend: settings.summaryBackend))
         }
     }
 
     static func unavailable(_ reason: String) -> NoteSummary {
-        NoteSummary(topic: nil, markdown: "_Summary unavailable: \(reason)._")
+        NoteSummary(topic: nil, markdown: "_Summary unavailable: \(reason)._", failure: reason)
+    }
+
+    /// The common failures in words a user can act on; anything else as the system
+    /// describes it.
+    static func plainReason(for error: Error, backend: SummaryBackend) -> String {
+        let unreachable: Set<URLError.Code> = [
+            .cannotConnectToHost, .cannotFindHost, .networkConnectionLost,
+            .notConnectedToInternet, .timedOut,
+        ]
+        if let urlError = error as? URLError, unreachable.contains(urlError.code) {
+            return backend == .local ? "Ollama isn't running" : "Anthropic couldn't be reached"
+        }
+        return error.localizedDescription
     }
 
     static func transcriptText(_ segments: [TranscriptSegment]) -> String {

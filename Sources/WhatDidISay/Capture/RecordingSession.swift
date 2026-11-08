@@ -78,6 +78,12 @@ final class RecordingSession {
     /// Names spotted on screen during the call, kept with the session so a retry
     /// after a failure still has them.
     var detectedParticipants: [String] = []
+    /// Why this recording is waiting under Needs Attention, e.g. "failed while
+    /// transcribing", shown on its row. Only known for this launch; a recording
+    /// recovered after a relaunch says how far it got instead.
+    var setAsideReason: String?
+    /// Why the saved note has no summary, when summaries are on but one couldn't be made.
+    var summaryFailure: String?
 
     let directory: URL
 

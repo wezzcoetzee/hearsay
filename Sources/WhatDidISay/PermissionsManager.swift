@@ -1,5 +1,6 @@
 import AVFoundation
 import AppKit
+import ApplicationServices
 import Combine
 import CoreGraphics
 import Foundation
@@ -31,6 +32,9 @@ final class PermissionsManager: ObservableObject {
 
     @Published private(set) var microphone: Status = .unknown
     @Published private(set) var screenRecording: Status = .unknown
+    /// Set once the user asks for Screen Recording this launch. macOS only reports it
+    /// as allowed after a relaunch, so from then on every surface offers that relaunch.
+    @Published private(set) var screenRecordingRequested = false
 
     private let probe: Probe
 
@@ -60,8 +64,27 @@ final class PermissionsManager: ObservableObject {
                 openSettings(.microphone)
             }
         case .screenRecording:
+            screenRecordingRequested = true
             await requestScreenRecording()
             if !screenRecording.isGranted { openSettings(.screenRecording) }
+        }
+    }
+
+    /// What the button that fixes a missing permission says: "Allow…" while macOS can
+    /// still ask, "Open System Settings" once the answer was no.
+    static func actionTitle(for pane: Pane, status: Status) -> String {
+        pane == .microphone && status == .denied ? "Open System Settings" : "Allow…"
+    }
+
+    /// Optional: lets the app read names off the call window. macOS shows its own
+    /// prompt the first time; after that, only the Privacy pane can change it.
+    static var accessibilityTrusted: Bool { AXIsProcessTrusted() }
+
+    static func requestAccessibility() {
+        let options = ["AXTrustedCheckOptionPrompt": true]
+        guard !AXIsProcessTrustedWithOptions(options as CFDictionary) else { return }
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -109,9 +132,7 @@ final class PermissionsManager: ObservableObject {
 
 #if DEBUG
     extension PermissionsManager {
-        func seedForScreenshots() {
-            microphone = .granted
-            screenRecording = .granted
-        }
+        /// The state after asking for Screen Recording, for the screenshot catalog.
+        func stageScreenRecordingRequested() { screenRecordingRequested = true }
     }
 #endif

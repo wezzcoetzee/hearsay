@@ -19,6 +19,7 @@ final class Settings: ObservableObject {
         static let acknowledgedConsent = "acknowledgedRecordingConsent"
         static let acknowledgedCloud = "acknowledgedCloudSummary"
         static let showRecordingPanel = "showRecordingPanel"
+        static let completedOnboarding = "completedOnboarding"
     }
 
     static let availableModels = ["tiny", "base", "small", "large-v3"]
@@ -54,11 +55,15 @@ final class Settings: ObservableObject {
 
     @Published var launchAtLogin: Bool {
         didSet {
-            // macOS can refuse; show what actually happened rather than what was asked.
+            // macOS can refuse; show what actually happened rather than what was asked,
+            // and say so, rather than letting the switch silently snap back.
             let registered = LoginItem.setEnabled(launchAtLogin)
+            launchAtLoginRefused = registered != launchAtLogin
             if registered != launchAtLogin { launchAtLogin = registered }
         }
     }
+
+    @Published private(set) var launchAtLoginRefused = false
 
     @Published var hasAcknowledgedConsent: Bool {
         didSet { defaults.set(hasAcknowledgedConsent, forKey: Keys.acknowledgedConsent) }
@@ -80,15 +85,30 @@ final class Settings: ObservableObject {
         didSet { defaults.set(showRecordingPanel, forKey: Keys.showRecordingPanel) }
     }
 
+    /// Set when the user finishes the setup guide, so someone who deliberately skips
+    /// Screen Recording (to record only the room) isn't walked through it every launch.
+    @Published var hasCompletedOnboarding: Bool {
+        didSet { defaults.set(hasCompletedOnboarding, forKey: Keys.completedOnboarding) }
+    }
+
     @Published private(set) var outputFolderPath: String?
     @Published private(set) var audioFolderPath: String?
 
     var hasOutputFolder: Bool { outputFolderPath != nil }
 
     var keepAudioExplanation: String {
-        keepAudio
-            ? "After a call is transcribed, its audio files are saved to this folder. Until you choose one, they're kept in Application Support."
-            : "Audio is deleted once the note is saved. Turn this on to keep the recordings."
+        switch (keepAudio, audioFolderName) {
+        case (false, _): "Audio is deleted once the note is saved."
+        case (true, let folder?): "The audio is moved to \(folder)."
+        case (true, nil): "Choose a folder for the audio. Until then it's kept in the app's own Library folder."
+        }
+    }
+
+    /// True only when a transcript will actually be sent: cloud chosen *and* a key to
+    /// send it with. Without a key the summary is skipped, so consent copy mustn't
+    /// claim otherwise.
+    var cloudSummaryActive: Bool {
+        summaryEnabled && summaryBackend == .cloud && !anthropicAPIKey.isEmpty
     }
 
     var outputFolderName: String? {
@@ -119,6 +139,7 @@ final class Settings: ObservableObject {
         self.launchAtLogin = LoginItem.isEnabled
         self.hasAcknowledgedConsent = defaults.bool(forKey: Keys.acknowledgedConsent)
         self.hasAcknowledgedCloud = defaults.bool(forKey: Keys.acknowledgedCloud)
+        self.hasCompletedOnboarding = defaults.bool(forKey: Keys.completedOnboarding)
 
         if let legacyKey = defaults.string(forKey: Keys.anthropicAPIKey), !legacyKey.isEmpty {
             // Only drop the old copy once the keychain has it, or the key is lost.
@@ -151,8 +172,8 @@ final class Settings: ObservableObject {
 
     func chooseOutputFolder() {
         if let url = pickFolder(
-            prompt: "Choose Vault Folder",
-            message: "Pick the folder (or Obsidian vault) where notes will be saved.")
+            prompt: "Choose",
+            message: "Choose the notes folder (or Obsidian vault) where each call is saved.")
         {
             useOutputFolder(url)
         }
@@ -160,8 +181,8 @@ final class Settings: ObservableObject {
 
     func chooseAudioFolder() {
         if let url = pickFolder(
-            prompt: "Choose Audio Folder",
-            message: "Pick the folder where call audio will be kept.")
+            prompt: "Choose",
+            message: "Choose the folder where call audio is kept.")
         {
             useAudioFolder(url)
         }
@@ -233,9 +254,3 @@ enum SummaryBackend: String, CaseIterable {
         }
     }
 }
-
-#if DEBUG
-    extension Settings {
-        func seedForScreenshots(outputFolder: String) { outputFolderPath = outputFolder }
-    }
-#endif

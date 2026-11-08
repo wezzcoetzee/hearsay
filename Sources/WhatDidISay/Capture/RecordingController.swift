@@ -10,6 +10,14 @@ final class RecordingController: ObservableObject {
         case finishing
         case processing(NotePipeline.Stage)
         case failed(String)
+
+        /// Nothing in progress: a new recording could start.
+        var isIdle: Bool {
+            switch self {
+            case .idle, .failed: true
+            case .recording, .finishing, .processing: false
+            }
+        }
     }
 
     struct SaveConfirmation: Equatable {
@@ -26,7 +34,7 @@ final class RecordingController: ObservableObject {
     /// processed right now isn't in it.
     @Published private(set) var needsAttention: [RecordingSession] = []
     private var inFlight: RecordingSession?
-    /// Set while "Process All" works through `needsAttention`; cancelling clears it.
+    /// Set while "Make All Notes" works through `needsAttention`; cancelling clears it.
     private var processingAll = false
     /// What the latest start attempt recorded, so retrying a failed start repeats it.
     @Published private(set) var lastSource: RecordingSource = .manual
@@ -34,8 +42,8 @@ final class RecordingController: ObservableObject {
     /// rather than point at a recording.
     @Published private(set) var failedToStart = false
     /// Set when a track stops writing mid-call (device unplugged, permission revoked),
-    /// so the user can restart rather than find half a call in the note later.
-    @Published private(set) var captureWarning: String?
+    /// so the user knows the rest of the call is missing rather than finding out later.
+    @Published private(set) var captureWarning: CaptureIssue?
     private var saveClearTask: Task<Void, Never>?
     private var processingTask: Task<Void, Never>?
     /// A cancelled run still unwinding (Whisper only notices cancellation between
@@ -78,11 +86,8 @@ final class RecordingController: ObservableObject {
         self.recordingsFolder = recordingsFolder
         self.systemCapture = SystemAudioCapture(levels: levels.sink)
         self.micCapture = MicCapture(levels: levels.sink)
-        micCapture.onInterrupted = reportInterruption(
-            "The microphone stopped recording, so the rest of what you say may be missing. Stop and start again to recover."
-        )
-        systemCapture.onInterrupted = reportInterruption(
-            "Call audio stopped recording, so the rest of the call may be missing. Stop and start again to recover.")
+        micCapture.onInterrupted = reportInterruption(.micStopped)
+        systemCapture.onInterrupted = reportInterruption(.callAudioStopped)
         activityMonitor.onEnded = { [weak self] in
             Task { await self?.stop() }
         }
@@ -111,6 +116,10 @@ final class RecordingController: ObservableObject {
         }
     }
 
+    /// What the note being made right now was recorded from: a retried recording's
+    /// own source, else the call that just stopped.
+    var processingSource: RecordingSource { inFlight?.source ?? lastSource }
+
     var isProcessing: Bool {
         if case .processing = state { return true }
         return false
@@ -133,13 +142,16 @@ final class RecordingController: ObservableObject {
         failedToStart = true
 
         saveClearTask?.cancel()
+        saveClearTask = nil
         lastSave = nil
         permissions.refresh()
         guard permissions.isGranted(for: source) else {
+            // Name only what's missing: a mic grant applies at once, Screen Recording
+            // only after a relaunch.
             state = .failed(
-                source.usesSystemAudio
-                    ? "Grant Microphone and Screen Recording, then relaunch."
-                    : "Grant Microphone, then relaunch.")
+                permissions.microphone.isGranted
+                    ? "Recording a call needs Screen Recording. Allow it in System Settings, then relaunch."
+                    : "Allow Microphone access, then try again.")
             return
         }
         guard settings.hasOutputFolder else {
@@ -170,22 +182,51 @@ final class RecordingController: ObservableObject {
             await teardown()
             session.deleteRecording()
             NSLog("Recording start failed: \(error)")
-            state = .failed(
-                "Couldn't start recording. Another app may be using the microphone or system audio. Try again.")
+            state = .failed("Couldn't start recording. Another app may be using the microphone or system audio.")
+            Announcer.post("Couldn't start recording. Another app may be using the microphone or system audio.")
         }
     }
 
-    /// Stops processing but keeps the audio, so the call lands in Needs attention.
-    func cancelProcessing() {
+    /// The Needs Attention reason for a recording whose speakers will be named later.
+    static let waitingForNames = "waiting for names"
+
+    /// Stops processing but keeps the audio, so the call lands in Needs Attention. The
+    /// user asked for this, so it isn't reported as a failure.
+    func cancelProcessing(because reason: String = "stopped by you") {
+        setAsideCurrent(because: reason)
+        Announcer.post("The recording is under Needs Attention, \(reason).")
+    }
+
+    /// Parks the recording waiting on the participant review under Needs Attention and
+    /// starts a new one, for a call that comes in before the user has named the last.
+    /// The transcript is already saved, so naming it later skips straight to review.
+    func nameLaterAndRecord(_ source: RecordingSource) async {
+        setAsideCurrent(because: Self.waitingForNames)
+        await start(source: source)
+    }
+
+    private func setAsideCurrent(because reason: String) {
         guard isProcessing else { return }
         processingAll = false
         processingTask?.cancel()
         // A retry may still be waiting on an earlier run, with no task of its own yet.
         unwinding = processingTask ?? unwinding
         processingTask = nil
-        if let inFlight { setAside(inFlight) }
+        if let inFlight { setAside(inFlight, because: reason) }
         inFlight = nil
-        state = .failed("Processing stopped. The recording is under Needs attention.")
+        state = .idle
+    }
+
+    /// Clears a failure message the user has read.
+    func dismissFailure() {
+        if case .failed = state { state = .idle }
+        failedToStart = false
+    }
+
+    func dismissSave() {
+        saveClearTask?.cancel()
+        saveClearTask = nil
+        lastSave = nil
     }
 
     func retry(_ session: RecordingSession) async {
@@ -195,7 +236,7 @@ final class RecordingController: ObservableObject {
         await process(session)
     }
 
-    /// Works through Needs attention one recording at a time until the list is done or
+    /// Works through Needs Attention one recording at a time until the list is done or
     /// the user cancels. Each recording still stops for participant review.
     func processAll() async {
         guard !isBusy else { return }
@@ -216,7 +257,10 @@ final class RecordingController: ObservableObject {
         session.deleteRecording()
     }
 
-    private func setAside(_ session: RecordingSession) {
+    /// Parks a recording under Needs Attention, which is where it's reported: the row
+    /// says why, so no separate failure message repeats it.
+    private func setAside(_ session: RecordingSession, because reason: String) {
+        session.setAsideReason = reason
         guard !needsAttention.contains(where: { $0 === session }) else { return }
         needsAttention.append(session)
         needsAttention.sort { $0.startedAt > $1.startedAt }
@@ -320,25 +364,36 @@ final class RecordingController: ObservableObject {
                     NSLog("Couldn't mark session noted: \(error)")
                 }
                 history.add(session)
-                let warning = archiveOrDeleteAudio(for: session)
-                confirmSave(folder: folder, noteURL: noteURL, warning: warning)
+                let warnings = [
+                    session.summaryFailure.map { "Saved without a summary: \($0)." },
+                    archiveOrDeleteAudio(for: session),
+                ].compactMap { $0 }
+                confirmSave(
+                    folder: folder, noteURL: noteURL,
+                    warning: warnings.isEmpty ? nil : warnings.joined(separator: " "))
                 state = .idle
             case .deleted:
                 inFlight = nil
                 session.deleteRecording()
                 state = .idle
             case .folderMissing:
+                // The menu's folder banner asks for a new one; the row says why.
                 inFlight = nil
-                setAside(session)
+                setAside(session, because: "notes folder missing")
                 settings.revalidateFolders()
-                state = .failed("The notes folder is missing. Choose one, then try again.")
+                state = .idle
+                Announcer.post("The notes folder is missing. Choose one, then process the recording again.")
             }
         } catch {
             guard !Task.isCancelled else { return }
             NSLog("Processing failed: \(error)")
             inFlight = nil
-            setAside(session)
-            state = .failed("Couldn't finish processing this recording. It's under Needs attention.")
+            let stage = if case .processing(let stage) = state { stage.title.lowercased() } else { "processing" }
+            setAside(session, because: "failed while \(stage)")
+            state = .idle
+            Announcer.post(
+                "The \(session.source.displayName) recording failed while \(stage). It's under Needs Attention to try again."
+            )
         }
     }
 
@@ -349,43 +404,54 @@ final class RecordingController: ObservableObject {
             session.deleteRecording()
             return nil
         }
-        guard let folder = settings.resolveAudioFolder() else {
-            return "No audio folder is set, so the audio is kept in Application Support. Choose one in Settings."
-        }
+        // Keep audio without a folder is a choice Settings explains (it stays in the
+        // app's Library folder), so it isn't warned about after every note.
+        guard let folder = settings.resolveAudioFolder() else { return nil }
         do {
             try AudioArchiver.archive(session, to: folder, format: settings.audioFilenameFormat)
             session.deleteRecording()
             return nil
         } catch {
             NSLog("Audio archive failed: \(error)")
-            return "Couldn't copy the audio to \(folder.lastPathComponent). It's kept in Application Support."
+            return "Couldn't copy the audio to \(folder.lastPathComponent). It's kept in the app's Library folder."
         }
     }
 
     private func confirmSave(folder: URL, noteURL: URL?, warning: String?) {
         lastSave = SaveConfirmation(noteURL: noteURL, folderName: folder.lastPathComponent, warning: warning)
         saveClearTask?.cancel()
-        // A warning is worth reading, so it lingers longer than a plain confirmation.
-        let linger: Duration = warning == nil ? .seconds(8) : .seconds(30)
+        saveClearTask = nil
+        Announcer.post(
+            warning.map { "Note saved to \(folder.lastPathComponent). \($0)" }
+                ?? "Note saved to \(folder.lastPathComponent).")
+    }
+
+    /// The menu was opened. A plain save confirmation fades a few seconds after it has
+    /// been seen, not after it was made: notes usually finish while the menu is closed.
+    /// A warning stays until the user dismisses it.
+    func saveConfirmationSeen() {
+        guard let lastSave, lastSave.warning == nil, saveClearTask == nil else { return }
         saveClearTask = Task { [weak self] in
-            try? await Task.sleep(for: linger)
+            try? await Task.sleep(for: .seconds(8))
             if Task.isCancelled { return }
             self?.lastSave = nil
+            self?.saveClearTask = nil
         }
     }
 
-    private func reportInterruption(_ warning: String) -> @Sendable (Error) -> Void {
+    private func reportInterruption(_ issue: CaptureIssue) -> @Sendable (Error) -> Void {
         { [weak self] error in
             NSLog("Capture interrupted: \(error)")
             Task { @MainActor in
                 guard let self, self.isRecording else { return }
-                self.captureWarning = warning
+                self.captureWarning = issue
+                Announcer.post("\(issue.title). \(issue.detail)")
             }
         }
     }
 
     /// Closes the audio of a call still being recorded, so quitting mid-call leaves
-    /// intact files that show under Needs attention on the next launch. Processing is
+    /// intact files that show under Needs Attention on the next launch. Processing is
     /// left for then: the quit shouldn't wait on a transcription.
     func finishForQuit() async {
         guard let session = current else { return }
@@ -413,6 +479,33 @@ final class RecordingController: ObservableObject {
     }
 }
 
+/// Something wrong with the audio mid-recording, worded once for the menu and the panel.
+enum CaptureIssue: Equatable, Sendable {
+    case micStopped
+    case callAudioStopped
+    /// The mic is recording but hears nothing: muted, or the wrong input device.
+    case micSilent
+
+    var title: String {
+        switch self {
+        case .micStopped: "Microphone stopped"
+        case .callAudioStopped: "Call audio stopped"
+        case .micSilent: "Microphone is silent"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .micStopped:
+            "Anything you say from now on is missed. Stop to save what was captured."
+        case .callAudioStopped:
+            "The rest of the call is missed. Stop to save what was captured."
+        case .micSilent:
+            "Check it isn't muted and the right input is selected."
+        }
+    }
+}
+
 #if DEBUG
     extension RecordingController {
         /// Puts the menu into a given state for the screenshot catalog without touching
@@ -423,7 +516,7 @@ final class RecordingController: ObservableObject {
             needsAttention: [RecordingSession] = [],
             failedToStart: Bool = false,
             lastSource: RecordingSource = .manual,
-            captureWarning: String? = nil
+            captureWarning: CaptureIssue? = nil
         ) {
             self.state = state
             self.lastSave = lastSave
