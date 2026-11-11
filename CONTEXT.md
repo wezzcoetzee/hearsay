@@ -35,4 +35,6 @@ and architecture reviews.
   `CallActivityMonitor`, `BrowserCallDetector`)
 - **Capture** — `MicCapture` and `SystemAudioCapture` write the tracks and report,
   once per recording, if either stops writing mid-call (`onInterrupted`), which the
-  menu surfaces as a warning.
+  menu surfaces as a warning. `MicCapture` builds a fresh `AVAudioEngine` per recording
+  and installs its tap through `ObjCException.catching`: AVAudioEngine raises on a bad
+  format, and a raise unwinding through Swift corrupts the concurrency runtime.

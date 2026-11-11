@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import ObjCExceptionCatcher
 
 /// Writes tap buffers to the mic file from the audio thread, while `close()` may run on
 /// the main one. Buffers in another format than the file (the input device changed
@@ -83,7 +84,10 @@ final class MicCapture {
     /// unexpectedly (the input couldn't restart after a device change, or writes fail).
     var onInterrupted: (@Sendable (Error) -> Void)?
 
-    private let engine = AVAudioEngine()
+    /// Replaced on every `start`. An engine kept from the last call can still report the
+    /// input format from back then, while a call app has since switched the device (a
+    /// headset going into call mode), and tapping that stale format raises.
+    private var engine = AVAudioEngine()
     private let levels: AudioLevelSink
     private let reporter = InterruptionReporter()
     private var writer: MicFileWriter?
@@ -95,6 +99,7 @@ final class MicCapture {
     }
 
     func start(writingTo url: URL) throws {
+        engine = AVAudioEngine()
         let format = engine.inputNode.outputFormat(forBus: 0)
         let file = try AVAudioFile(forWriting: url, settings: format.settings)
 
@@ -135,9 +140,14 @@ final class MicCapture {
             throw MicFileWriter.WriteError.noInput
         }
         let input = engine.inputNode
-        input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [levels] buffer, _ in
-            writer.write(buffer)
-            levels.submitMic(AudioLevel.level(of: buffer))
+        // A format that doesn't match the device raises rather than throws. Uncaught, it
+        // skipped the rest of `RecordingController.start`: call audio kept recording, the
+        // menu never showed it, and the next actor check crashed the app.
+        try ObjCException.catching {
+            input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [levels] buffer, _ in
+                writer.write(buffer)
+                levels.submitMic(AudioLevel.level(of: buffer))
+            }
         }
 
         engine.prepare()
