@@ -30,6 +30,14 @@ open build/WhatDidISay.app
 
 Lint with `./Scripts/lint.sh` (swift-format, config in `.swift-format`); `./Scripts/lint.sh --fix` formats in place first.
 
+### Releasing
+
+```sh
+./Scripts/release.sh 1.2.0   # dist/WhatDidISay-1.2.0.zip and .dmg
+```
+
+Pushing a `v*` tag (`git tag v1.2.0 && git push origin v1.2.0`) runs `.github/workflows/release.yml`, which builds with `release.sh` and attaches the zip and DMG to a GitHub release for the tag. CI has no local signing identity, so release builds are signed ad-hoc.
+
 ### Screenshots
 
 ```sh
