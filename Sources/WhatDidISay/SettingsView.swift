@@ -13,9 +13,7 @@ struct SettingsView: View {
             Section("General") {
                 Toggle(isOn: $settings.autoDetect) {
                     Text("Auto-detect calls")
-                    Text(
-                        permissions.screenRecording.isGranted
-                            ? Copy.autoDetectExplanation : Copy.autoDetectNeedsScreenRecording)
+                    Text(permissions.screenRecording.isGranted ? Copy.autoDetectExplanation : Copy.autoDetectNeedsScreenRecording)
                 }
                 .disabled(!permissions.screenRecording.isGranted)
                 Toggle(isOn: $settings.showRecordingPanel) {
@@ -33,29 +31,23 @@ struct SettingsView: View {
             }
 
             Section {
-                permissionRow(
-                    "Microphone", detail: "Your side of a call, and the room in person.",
-                    allowed: permissions.microphone.isGranted,
-                    action: PermissionsManager.actionTitle(for: .microphone, status: permissions.microphone)
-                ) {
+                permissionRow("Microphone", detail: "Your side of a call, and the room in person.",
+                              allowed: permissions.microphone.isGranted,
+                              action: PermissionsManager.actionTitle(for: .microphone, status: permissions.microphone)) {
                     Task { await permissions.request(.microphone) }
                 }
-                permissionRow(
-                    "Screen Recording",
-                    detail: permissions.screenRecordingRequested && !permissions.screenRecording.isGranted
-                        ? "Everyone else on a call. \(Copy.relaunchHint)" : "Everyone else on a call.",
-                    allowed: permissions.screenRecording.isGranted
-                ) {
+                permissionRow("Screen Recording",
+                              detail: permissions.screenRecordingRequested && !permissions.screenRecording.isGranted
+                                  ? "Everyone else on a call. \(Copy.relaunchHint)" : "Everyone else on a call.",
+                              allowed: permissions.screenRecording.isGranted) {
                     Task { await permissions.request(.screenRecording) }
                 } extra: {
                     if permissions.screenRecordingRequested {
                         RelaunchButton(isBusy: recorder.isBusy)
                     }
                 }
-                permissionRow(
-                    "Accessibility", detail: "Optional. Reads names off the call window.",
-                    allowed: accessibilityTrusted
-                ) {
+                permissionRow("Accessibility", detail: "Optional. Detects Google Meet and reads names off the call window.",
+                              allowed: accessibilityTrusted) {
                     PermissionsManager.requestAccessibility()
                 }
             } header: {
@@ -79,9 +71,7 @@ struct SettingsView: View {
                 }
                 Toggle(isOn: $settings.diarize) {
                     Text("Separate remote speakers")
-                    Text(
-                        "Labels each voice on the call as Speaker 1, Speaker 2, and so on. In-person recordings always do this."
-                    )
+                    Text("Labels each voice on the call as Speaker 1, Speaker 2, and so on. In-person recordings always do this.")
                 }
             }
 
@@ -156,9 +146,7 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) { settings.summaryBackend = .local }
             Button("Use Cloud Summaries") { settings.hasAcknowledgedCloud = true }
         } message: {
-            Text(
-                "With cloud summaries on, the finished transcript text of each call is sent to Anthropic to generate the summary. Your audio never leaves your Mac. Turn this off any time to keep everything on-device."
-            )
+            Text("With cloud summaries on, the finished transcript text of each call is sent to Anthropic to generate the summary. Your audio never leaves your Mac. Turn this off any time to keep everything on-device.")
         }
     }
 
@@ -167,11 +155,9 @@ struct SettingsView: View {
         accessibilityTrusted = PermissionsManager.accessibilityTrusted
     }
 
-    private func permissionRow<Extra: View>(
-        _ name: String, detail: String, allowed: Bool, action: String = "Allow…",
-        allow: @escaping () -> Void,
-        @ViewBuilder extra: () -> Extra = { EmptyView() }
-    ) -> some View {
+    private func permissionRow<Extra: View>(_ name: String, detail: String, allowed: Bool, action: String = "Allow…",
+                                            allow: @escaping () -> Void,
+                                            @ViewBuilder extra: () -> Extra = { EmptyView() }) -> some View {
         LabeledContent {
             if allowed {
                 PermissionStatus(name: name, allowed: true)

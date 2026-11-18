@@ -1,15 +1,12 @@
 import Foundation
 import Testing
-
 @testable import WhatDidISay
 
 @Suite struct RecordingSessionTests {
     private let folder = FileManager.default.temporaryDirectory
         .appendingPathComponent("RecordingSessionTests-\(UUID().uuidString)", isDirectory: true)
 
-    private func recording(_ source: RecordingSource = .slack, progress: RecordingSession.Progress) throws
-        -> RecordingSession
-    {
+    private func recording(_ source: RecordingSource = .slack, progress: RecordingSession.Progress) throws -> RecordingSession {
         let session = RecordingSession(source: source, in: folder)
         session.detectedParticipants = ["Ada"]
         try session.advance(to: progress)
@@ -47,8 +44,7 @@ import Testing
 
         #expect(found.map(\.directory.lastPathComponent) == [legacy.lastPathComponent])
         #expect(found.first?.progress == .recorded)
-        let start = DateComponents(calendar: .current, year: 2026, month: 10, day: 28, hour: 8, minute: 34, second: 56)
-            .date
+        let start = DateComponents(calendar: .current, year: 2026, month: 10, day: 28, hour: 8, minute: 34, second: 56).date
         #expect(found.first?.startedAt == start)
     }
 

@@ -48,11 +48,9 @@ struct NotePipeline {
         let review = RosterReview(
             voices: RosterReview.voices(in: segments),
             others: input.detectedParticipants.sorted(),
-            context: [
-                input.session.source.recordingName,
-                input.session.startedAt.formatted(.dateTime.month().day().hour().minute()),
-                ElapsedTime.length(input.session.duration),
-            ].joined(separator: " · ")
+            context: [input.session.source.recordingName,
+                      input.session.startedAt.formatted(.dateTime.month().day().hour().minute()),
+                      ElapsedTime.length(input.session.duration)].joined(separator: " · ")
         )
         let roster: ReviewedRoster
         if let confirmRoster {

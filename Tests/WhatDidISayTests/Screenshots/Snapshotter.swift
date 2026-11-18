@@ -14,20 +14,15 @@ enum Snapshotter {
         let size: CGSize
     }
 
-    static func render<V: View>(
-        _ view: V, appearance: NSAppearance.Name,
-        scrolledToBottom: Bool = false
-    ) async throws -> Shot {
+    static func render<V: View>(_ view: V, appearance: NSAppearance.Name,
+                                scrolledToBottom: Bool = false) async throws -> Shot {
         // Must run before anything touches `NSApplication.shared`, so NSApp is this subclass.
         _ = ActiveApplication.shared
-        let host = NSHostingView(
-            rootView:
-                view
-                .background(Color(nsColor: .windowBackgroundColor))
-                .environment(\.controlActiveState, .key))
-        let window = ActiveWindow(
-            contentRect: .zero, styleMask: [.borderless],
-            backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: view
+            .background(Color(nsColor: .windowBackgroundColor))
+            .environment(\.controlActiveState, .key))
+        let window = ActiveWindow(contentRect: .zero, styleMask: [.borderless],
+                                  backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: appearance)
         window.contentView = host
 

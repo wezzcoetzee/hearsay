@@ -1,6 +1,6 @@
-import AppKit
-import Combine
 import Foundation
+import Combine
+import AppKit
 
 @MainActor
 final class Settings: ObservableObject {
@@ -171,19 +171,15 @@ final class Settings: ObservableObject {
     }
 
     func chooseOutputFolder() {
-        if let url = pickFolder(
-            prompt: "Choose",
-            message: "Choose the notes folder (or Obsidian vault) where each call is saved.")
-        {
+        if let url = pickFolder(prompt: "Choose",
+                                message: "Choose the notes folder (or Obsidian vault) where each call is saved.") {
             useOutputFolder(url)
         }
     }
 
     func chooseAudioFolder() {
-        if let url = pickFolder(
-            prompt: "Choose",
-            message: "Choose the folder where call audio is kept.")
-        {
+        if let url = pickFolder(prompt: "Choose",
+                                message: "Choose the folder where call audio is kept.") {
             useAudioFolder(url)
         }
     }
@@ -199,14 +195,12 @@ final class Settings: ObservableObject {
     private func resolveFolder(bookmarkKey: String) -> URL? {
         guard let data = defaults.data(forKey: bookmarkKey) else { return nil }
         var stale = false
-        guard
-            let url = try? URL(
-                resolvingBookmarkData: data,
-                options: [.withSecurityScope],
-                relativeTo: nil,
-                bookmarkDataIsStale: &stale
-            )
-        else { return nil }
+        guard let url = try? URL(
+            resolvingBookmarkData: data,
+            options: [.withSecurityScope],
+            relativeTo: nil,
+            bookmarkDataIsStale: &stale
+        ) else { return nil }
 
         if stale {
             refreshBookmark(for: url, key: bookmarkKey)
@@ -232,12 +226,9 @@ final class Settings: ObservableObject {
     }
 
     private func storeBookmark(for url: URL, key: String) -> Bool {
-        guard
-            let data = try? url.bookmarkData(
-                options: [.withSecurityScope],
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil)
-        else { return false }
+        guard let data = try? url.bookmarkData(options: [.withSecurityScope],
+                                               includingResourceValuesForKeys: nil,
+                                               relativeTo: nil) else { return false }
         defaults.set(data, forKey: key)
         return true
     }

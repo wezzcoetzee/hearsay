@@ -16,7 +16,7 @@ let package = Package(
             dependencies: [
                 "ObjCExceptionCatcher",
                 .product(name: "WhisperKit", package: "argmax-oss-swift"),
-                .product(name: "SpeakerKit", package: "argmax-oss-swift"),
+                .product(name: "SpeakerKit", package: "argmax-oss-swift")
             ],
             path: "Sources/WhatDidISay"
         ),
@@ -25,6 +25,6 @@ let package = Package(
             name: "WhatDidISayTests",
             dependencies: ["WhatDidISay", "ObjCExceptionCatcher"],
             path: "Tests/WhatDidISayTests"
-        ),
+        )
     ]
 )

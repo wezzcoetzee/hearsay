@@ -1,7 +1,6 @@
 import AVFoundation
 import Foundation
 import Testing
-
 @testable import WhatDidISay
 
 @Suite struct AudioLevelTests {
@@ -44,9 +43,8 @@ import Testing
 
     private static func buffer(amplitude: Float, frames: AVAudioFrameCount) -> AVAudioPCMBuffer? {
         guard let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1),
-            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames),
-            let channel = buffer.floatChannelData
-        else { return nil }
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames),
+              let channel = buffer.floatChannelData else { return nil }
         buffer.frameLength = frames
         for frame in 0..<Int(frames) {
             channel[0][frame] = amplitude * sin(Float(frame) * 0.1)

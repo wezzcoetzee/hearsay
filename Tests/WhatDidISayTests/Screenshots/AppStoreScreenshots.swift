@@ -2,7 +2,6 @@ import AppKit
 import Foundation
 import SwiftUI
 import Testing
-
 @testable import WhatDidISay
 
 /// Mac App Store marketing screenshots: 1440 x 900 points, rendered at 2x to the
@@ -45,103 +44,69 @@ extension AppStoreScreenshots {
     private static var midCall: Date { Date().addingTimeInterval(-754) }
 
     static let frames: [Frame] = [
-        Frame(
-            id: "record", headline: "Every call,\nwritten down.",
-            detail:
-                "Records Slack huddles, Teams calls and Google Meet from the menu bar, both sides, and transcribes them on your Mac."
-        ) { f in
+        Frame(id: "record", headline: "Every call,\nwritten down.",
+              detail: "Records Slack huddles, Teams calls and Google Meet from the menu bar, both sides, and transcribes them on your Mac.") { f in
             try f.addHistory()
             f.recorder.stageForScreenshots(.recording(since: midCall), lastSource: .slack)
             f.recorder.levels.stageForScreenshots(mic: 0.62, system: 0.45)
             return AnyView(MenuBarScene(status: .recording) { menu(f) })
         },
-        Frame(
-            id: "consent", headline: "Nothing records\nuntil you say so.",
-            detail:
-                "When a call starts you get a prompt, not a recording. It says who is recorded and where everything goes."
-        ) { _ in
+        Frame(id: "consent", headline: "Nothing records\nuntil you say so.",
+              detail: "When a call starts you get a prompt, not a recording. It says who is recorded and where everything goes.") { _ in
             let prompt = ConfirmationController()
             prompt.stageForScreenshots(source: .slack, countdown: 12, cloudActive: false)
             return AnyView(AppWindow(scale: 1.6) { ConfirmationView(controller: prompt) })
         },
-        Frame(
-            id: "speakers", headline: "Know who\nsaid what.",
-            detail: "After the call, name each voice. Names spotted in the call window are a click away."
-        ) { _ in
-            AnyView(
-                AppWindow(scale: 1.25) {
-                    ParticipantReviewView(
-                        request: RosterReview(
-                            voices: [
-                                VoiceCandidate(label: "Me", suggestion: "Me", sample: "Shall we get started?"),
-                                VoiceCandidate(
-                                    label: "Speaker 1", suggestion: "Priya Shah",
-                                    sample: "Can we move the launch to Thursday?"),
-                                VoiceCandidate(
-                                    label: "Speaker 2", suggestion: "",
-                                    sample: "Thursday works if design signs off today."),
-                            ],
-                            others: ["Marcus Lee", "Dana Wu"],
-                            context: "Slack Huddle · 3 Nov at 09:21 · 25 min"),
-                        accessibilityTrusted: true, onDone: { _ in }, onDelete: {})
-                })
+        Frame(id: "speakers", headline: "Know who\nsaid what.",
+              detail: "After the call, name each voice. Names spotted in the call window are a click away.") { _ in
+            AnyView(AppWindow(scale: 1.25) {
+                ParticipantReviewView(request: RosterReview(
+                    voices: [
+                        VoiceCandidate(label: "Me", suggestion: "Me", sample: "Shall we get started?"),
+                        VoiceCandidate(label: "Speaker 1", suggestion: "Priya Shah", sample: "Can we move the launch to Thursday?"),
+                        VoiceCandidate(label: "Speaker 2", suggestion: "", sample: "Thursday works if design signs off today.")
+                    ],
+                    others: ["Marcus Lee", "Dana Wu"],
+                    context: "Slack Huddle · 3 Nov at 09:21 · 25 min"),
+                    accessibilityTrusted: true, onDone: { _ in }, onDelete: {})
+            })
         },
-        Frame(
-            id: "notes", headline: "A note in\nyour vault.",
-            detail:
-                "Summary, action items and a speaker-labelled transcript, saved as markdown to any folder or Obsidian vault."
-        ) { _ in
-            AnyView(
-                NoteWindow(name: MarkdownWriter.fileName(SampleNote.metadata) + ".md", markdown: SampleNote.markdown))
+        Frame(id: "notes", headline: "A note in\nyour vault.",
+              detail: "Summary, action items and a speaker-labelled transcript, saved as markdown to any folder or Obsidian vault.") { _ in
+            AnyView(NoteWindow(name: MarkdownWriter.fileName(SampleNote.metadata) + ".md", markdown: SampleNote.markdown))
         },
-        Frame(
-            id: "room", headline: "In-person\nmeetings, too.",
-            detail: "Record the room from the microphone alone. Every voice is told apart, ready to name."
-        ) { f in
+        Frame(id: "room", headline: "In-person\nmeetings, too.",
+              detail: "Record the room from the microphone alone. Every voice is told apart, ready to name.") { f in
             f.recorder.stageForScreenshots(.recording(since: midCall), lastSource: .inPerson)
             f.recorder.levels.stageForScreenshots(mic: 0.5, system: 0, tracksSystemAudio: false)
-            return AnyView(
-                ZStack(alignment: .bottomLeading) {
-                    MenuBarScene(status: .recording) { menu(f) }
-                    AppWindow(scale: 1) {
-                        ParticipantReviewView(
-                            request: RosterReview(
-                                voices: [
-                                    VoiceCandidate(
-                                        label: "Speaker 1", suggestion: "Dana Wu",
-                                        sample: "Okay, quick round of updates."),
-                                    VoiceCandidate(
-                                        label: "Speaker 2", suggestion: "Sam Ortiz",
-                                        sample: "The migration finished overnight."),
-                                    VoiceCandidate(
-                                        label: "Speaker 3", suggestion: "",
-                                        sample: "I still need a reviewer for the API change."),
-                                ],
-                                others: [],
-                                context: "In Person · 3 Nov at 10:02 · 48 min"),
-                            accessibilityTrusted: true, onDone: { _ in }, onDelete: {})
-                    }
-                    .padding(.bottom, 40)
-                })
+            return AnyView(ZStack(alignment: .bottomLeading) {
+                MenuBarScene(status: .recording) { menu(f) }
+                AppWindow(scale: 1) {
+                    ParticipantReviewView(request: RosterReview(
+                        voices: [
+                            VoiceCandidate(label: "Speaker 1", suggestion: "Dana Wu", sample: "Okay, quick round of updates."),
+                            VoiceCandidate(label: "Speaker 2", suggestion: "Sam Ortiz", sample: "The migration finished overnight."),
+                            VoiceCandidate(label: "Speaker 3", suggestion: "", sample: "I still need a reviewer for the API change.")
+                        ],
+                        others: [],
+                        context: "In Person · 3 Nov at 10:02 · 48 min"),
+                        accessibilityTrusted: true, onDone: { _ in }, onDelete: {})
+                }
+                .padding(.bottom, 40)
+            })
         },
-        Frame(
-            id: "private", headline: "Your audio stays\non your Mac.",
-            detail:
-                "Transcription runs on-device. Cloud summaries are optional, and only ever send the transcript text."
-        ) { f in
-            AnyView(
-                AppWindow(scale: 1.15) {
-                    OnboardingView(
-                        permissions: f.permissions, settings: f.settings, startingAt: .welcome,
-                        onClose: {}, onRelaunch: {})
-                })
-        },
+        Frame(id: "private", headline: "Your audio stays\non your Mac.",
+              detail: "Transcription runs on-device. Cloud summaries are optional, and only ever send the transcript text.") { f in
+            AnyView(AppWindow(scale: 1.15) {
+                OnboardingView(permissions: f.permissions, settings: f.settings, startingAt: .welcome,
+                               onClose: {}, onRelaunch: {})
+            })
+        }
     ]
 
     private static func menu(_ f: ScreenshotFixture) -> some View {
-        MenuContent(
-            recorder: f.recorder, settings: f.settings, permissions: f.permissions,
-            history: f.history, levels: f.recorder.levels)
+        MenuContent(recorder: f.recorder, settings: f.settings, permissions: f.permissions,
+                    history: f.history, levels: f.recorder.levels)
     }
 }
 
@@ -168,7 +133,7 @@ private enum SampleNote {
         (11, Speaker(label: "Priya Shah"), "Can we move the launch to Thursday? Marketing needs two more days."),
         (19, Speaker(label: "Marcus Lee"), "Thursday works if design signs off today."),
         (26, .me, "Then let's aim for sign-off by three."),
-        (31, Speaker(label: "Marcus Lee"), "I'll send the final mocks right after this."),
+        (31, Speaker(label: "Marcus Lee"), "I'll send the final mocks right after this.")
     ]
 
     static var markdown: String {
@@ -268,12 +233,8 @@ private struct NoteWindow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                ForEach(
-                    [
-                        Color(red: 1, green: 0.37, blue: 0.34), Color(red: 1, green: 0.74, blue: 0.18),
-                        Color(red: 0.16, green: 0.79, blue: 0.25),
-                    ], id: \.self
-                ) { Circle().fill($0).frame(width: 12, height: 12) }
+                ForEach([Color(red: 1, green: 0.37, blue: 0.34), Color(red: 1, green: 0.74, blue: 0.18),
+                         Color(red: 0.16, green: 0.79, blue: 0.25)], id: \.self) { Circle().fill($0).frame(width: 12, height: 12) }
                 Spacer()
                 Label(name, systemImage: "doc.text")
                     .font(.system(size: 12, weight: .medium))
@@ -301,8 +262,7 @@ private extension View {
     /// A window's rounded edge and hairline, which on black stands in for its shadow.
     func chrome(cornerRadius: CGFloat) -> some View {
         clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.16)))
+            .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.16)))
     }
 }

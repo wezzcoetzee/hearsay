@@ -1,6 +1,6 @@
+import Testing
 import AVFoundation
 import ObjCExceptionCatcher
-import Testing
 
 @Suite struct ObjCExceptionTests {
     /// AVAudioEngine reports a bad tap by raising. A second tap on the same bus raises the

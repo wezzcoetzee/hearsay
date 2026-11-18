@@ -1,14 +1,12 @@
 import Foundation
 import Testing
-
 @testable import WhatDidISay
 
 @Suite @MainActor struct TranscriptBuilderTests {
     private let system = URL(fileURLWithPath: "/tmp/system.m4a")
     private let mic = URL(fileURLWithPath: "/tmp/mic.caf")
 
-    private func builder(_ transcriber: FakeTranscriber, _ diarizer: FakeDiarizer = FakeDiarizer()) -> TranscriptBuilder
-    {
+    private func builder(_ transcriber: FakeTranscriber, _ diarizer: FakeDiarizer = FakeDiarizer()) -> TranscriptBuilder {
         TranscriptBuilder(transcriber: transcriber, diarizer: diarizer)
     }
 
@@ -25,8 +23,7 @@ import Testing
     @Test func leavesSpeakersUntouchedWhenDiarizeDisabled() async throws {
         let transcriber = FakeTranscriber(others: [makeSegment(0, "hi", .others)], mine: [])
         let diarizer = FakeDiarizer(spans: [SpeakerSpan(start: 0, end: 2, speakerId: 0)])
-        let out = try await builder(transcriber, diarizer).build(
-            system: system, mic: mic, model: "base", diarize: false)
+        let out = try await builder(transcriber, diarizer).build(system: system, mic: mic, model: "base", diarize: false)
         #expect(out.segments.first?.speaker == .others)
         #expect(!out.diarizationFailed)
     }
@@ -78,15 +75,13 @@ import Testing
     }
 
     @Test func micAloneSplitsTheRoomByDiarization() async throws {
-        let transcriber = FakeTranscriber(
-            others: [],
-            mine: [
-                makeSegment(0, "morning", .numbered(0)),
-                makeSegment(10, "morning back", .numbered(0)),
-            ])
+        let transcriber = FakeTranscriber(others: [], mine: [
+            makeSegment(0, "morning", .numbered(0)),
+            makeSegment(10, "morning back", .numbered(0))
+        ])
         let diarizer = FakeDiarizer(spans: [
             SpeakerSpan(start: 0, end: 2, speakerId: 0),
-            SpeakerSpan(start: 10, end: 12, speakerId: 1),
+            SpeakerSpan(start: 10, end: 12, speakerId: 1)
         ])
         let out = try await builder(transcriber, diarizer).build(system: nil, mic: mic, model: "base", diarize: true)
         #expect(out.segments.map(\.speaker) == [Speaker.numbered(0), Speaker.numbered(1)])

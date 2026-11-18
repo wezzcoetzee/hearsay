@@ -1,5 +1,4 @@
 import Foundation
-
 @testable import WhatDidISay
 
 final class FakeTranscriber: Transcribing, @unchecked Sendable {

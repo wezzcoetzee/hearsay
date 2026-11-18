@@ -1,6 +1,5 @@
 import Foundation
 import Testing
-
 @testable import WhatDidISay
 
 @Suite struct MarkdownWriterTests {
@@ -61,8 +60,7 @@ import Testing
     @Test func fileNameIsDateSourceTopic() {
         let stamp = MarkdownWriter.fileTimestamp(date)
         #expect(MarkdownWriter.fileName(metadata()) == "\(stamp) Slack Huddle")
-        #expect(
-            MarkdownWriter.fileName(metadata(topic: "Q3: plan / review.")) == "\(stamp) Slack Huddle - Q3 plan review")
+        #expect(MarkdownWriter.fileName(metadata(topic: "Q3: plan / review.")) == "\(stamp) Slack Huddle - Q3 plan review")
     }
 
     @Test func durationRoundsToWholeMinutes() {

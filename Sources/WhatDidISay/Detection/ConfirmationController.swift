@@ -1,6 +1,6 @@
+import SwiftUI
 import AppKit
 import Combine
-import SwiftUI
 
 /// Why a detected call can't simply be recorded: the recorder still holds the last
 /// one, or the start just failed.
@@ -66,12 +66,11 @@ final class ConfirmationController: ObservableObject {
         // VoiceOver users can't reach a panel that never takes focus, so for them it
         // does. Everyone else keeps typing into the call undisturbed.
         if NSWorkspace.shared.isVoiceOverEnabled { panel?.makeKey() }
-        Announcer.post(
-            blocker.map {
-                if case .startFailed(let reason) = $0 { return "\(source.displayName) not recorded. \(reason)" }
-                return "\(source.displayName) detected. \($0.message)"
-            }
-                ?? "\(source.displayName) detected. Start recording?")
+        Announcer.post(blocker.map {
+            if case .startFailed(let reason) = $0 { return "\(source.displayName) not recorded. \(reason)" }
+            return "\(source.displayName) detected. \($0.message)"
+        }
+                       ?? "\(source.displayName) detected. Start recording?")
         guard !waitsForAnswer else { return }
         timerTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -129,10 +128,9 @@ final class ConfirmationController: ObservableObject {
     private func showPanel() {
         let hosting = NSHostingView(rootView: ConfirmationView(controller: self))
         // Sized to the content, so longer copy (the cloud note) is never clipped.
-        let panel = NSPanel.floating(
-            contentView: hosting,
-            size: hosting.fittingSize,
-            styleMask: [.titled])
+        let panel = NSPanel.floating(contentView: hosting,
+                                     size: hosting.fittingSize,
+                                     styleMask: [.titled])
         panel.title = "Call detected"
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
@@ -183,14 +181,10 @@ struct ConfirmationView: View {
                     Button("Not Now") { controller.dismiss() }
                         .keyboardShortcut(.cancelAction)
                     Button("Start Recording") {
-                        if controller.blocker == .awaitingNames {
-                            controller.nameLaterAndRecord()
-                        } else {
-                            controller.confirm()
-                        }
+                        if controller.blocker == .awaitingNames { controller.nameLaterAndRecord() } else { controller.confirm() }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
                 }
             }
         }
@@ -217,18 +211,16 @@ struct ConfirmationView: View {
 }
 
 #if DEBUG
-    extension ConfirmationController {
-        /// Shows the prompt's content without a panel or countdown, for the screenshot
-        /// catalog. Debug builds only.
-        func stageForScreenshots(
-            source: RecordingSource, countdown: Int, cloudActive: Bool,
-            blocker: CallBlocker? = nil
-        ) {
-            waitsForAnswer = blocker?.isFailure == true
-            pending = source
-            self.countdown = countdown
-            self.cloudActive = cloudActive
-            self.blocker = blocker
-        }
+extension ConfirmationController {
+    /// Shows the prompt's content without a panel or countdown, for the screenshot
+    /// catalog. Debug builds only.
+    func stageForScreenshots(source: RecordingSource, countdown: Int, cloudActive: Bool,
+                             blocker: CallBlocker? = nil) {
+        waitsForAnswer = blocker?.isFailure == true
+        pending = source
+        self.countdown = countdown
+        self.cloudActive = cloudActive
+        self.blocker = blocker
     }
+}
 #endif

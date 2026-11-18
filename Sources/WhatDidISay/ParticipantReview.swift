@@ -1,6 +1,6 @@
+import SwiftUI
 import AppKit
 import ApplicationServices
-import SwiftUI
 
 @MainActor
 final class ParticipantReviewController: NSObject, NSWindowDelegate {
@@ -70,9 +70,7 @@ final class ParticipantReviewController: NSObject, NSWindowDelegate {
         // Shown without taking focus: it can appear minutes after the call, while the
         // user is typing elsewhere. A click, or Review… in the menu, makes it key.
         window.orderFrontRegardless()
-        Announcer.post(
-            "Name the speakers from your \(request.context.isEmpty ? "last recording" : request.context). Review is in the \(AppInfo.displayName) menu."
-        )
+        Announcer.post("Name the speakers from your \(request.context.isEmpty ? "last recording" : request.context). Review is in the \(AppInfo.displayName) menu.")
     }
 
     /// Brings the waiting review forward, for the menu's Review button.
@@ -148,21 +146,18 @@ struct ParticipantReviewView: View {
     /// once Accessibility is allowed.
     @State private var accessibilityTrusted: Bool
 
-    init(
-        request: RosterReview, draft: ReviewDraft? = nil, accessibilityTrusted: Bool = AXIsProcessTrusted(),
-        onDone: @escaping (ReviewedRoster) -> Void, onDelete: @escaping () -> Void,
-        onNameLater: @escaping () -> Void = {}, onDraftChange: @escaping (ReviewDraft) -> Void = { _ in }
-    ) {
+    init(request: RosterReview, draft: ReviewDraft? = nil, accessibilityTrusted: Bool = AXIsProcessTrusted(),
+         onDone: @escaping (ReviewedRoster) -> Void, onDelete: @escaping () -> Void,
+         onNameLater: @escaping () -> Void = {}, onDraftChange: @escaping (ReviewDraft) -> Void = { _ in }) {
         self.voices = request.voices
         self.context = request.context
         _accessibilityTrusted = State(initialValue: accessibilityTrusted)
         let draft = draft.flatMap { $0.names.count == request.voices.count ? $0 : nil }
         _names = State(initialValue: draft?.names ?? request.voices.map(\.suggestion))
         _mergedInto = State(initialValue: draft?.mergedInto ?? [:])
-        _detected = State(
-            initialValue: request.others.map {
-                Attendee(name: $0, included: draft?.includedSeen.contains($0) ?? false)
-            })
+        _detected = State(initialValue: request.others.map {
+            Attendee(name: $0, included: draft?.includedSeen.contains($0) ?? false)
+        })
         _added = State(initialValue: (draft?.added ?? []).map { Attendee(name: $0) })
         _newName = State(initialValue: draft?.newName ?? "")
         self.onDone = onDone
@@ -174,9 +169,8 @@ struct ParticipantReviewView: View {
     /// Everything typed or chosen so far, handed up as it changes so Name Later (or
     /// the close button) can keep it.
     private var draft: ReviewDraft {
-        ReviewDraft(
-            names: names, mergedInto: mergedInto, added: added.map(\.name),
-            includedSeen: Set(detected.filter(\.included).map(\.name)), newName: newName)
+        ReviewDraft(names: names, mergedInto: mergedInto, added: added.map(\.name),
+                    includedSeen: Set(detected.filter(\.included).map(\.name)), newName: newName)
     }
 
     var body: some View {
@@ -198,6 +192,7 @@ struct ParticipantReviewView: View {
                 rows
                 ScrollView { rows }
             }
+
 
             if !accessibilityTrusted {
                 HStack(spacing: 6) {
@@ -274,11 +269,9 @@ struct ParticipantReviewView: View {
                     HStack(spacing: 8) {
                         TextField("Name", text: $attendee.name)
                             .textFieldStyle(.roundedBorder)
-                        IconButton(
-                            symbol: "minus.circle",
-                            label: attendee.name.isEmpty ? "Remove participant" : "Remove \(attendee.name)",
-                            help: "Remove"
-                        ) {
+                        IconButton(symbol: "minus.circle",
+                                   label: attendee.name.isEmpty ? "Remove participant" : "Remove \(attendee.name)",
+                                   help: "Remove") {
                             added.removeAll { $0.id == attendee.id }
                         }
                     }
@@ -407,11 +400,10 @@ struct ParticipantReviewView: View {
         let present = (detected.filter(\.included) + added)
             .map { $0.name.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && !voiceNames.contains($0) }
-        onDone(
-            ReviewedRoster(
-                voices: RosterReview.reviewed(voices, names: names, mergedInto: mergedInto),
-                others: present
-            ))
+        onDone(ReviewedRoster(
+            voices: RosterReview.reviewed(voices, names: names, mergedInto: mergedInto),
+            others: present
+        ))
     }
 }
 
