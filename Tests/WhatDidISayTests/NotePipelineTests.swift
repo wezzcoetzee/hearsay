@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import WhatDidISay
 
 @Suite @MainActor final class NotePipelineTests {
@@ -47,8 +48,11 @@ import Testing
     @Test func savedOutcomeWritesNoteAndPopulatesSession() async throws {
         let expected = folder.appendingPathComponent("note.md")
         var written: String?
-        let pipe = pipeline(others: [], mine: [makeSegment(0, "hi", .me)],
-                            write: { markdown, _, _ in written = markdown; return expected })
+        let pipe = pipeline(
+            others: [], mine: [makeSegment(0, "hi", .me)],
+            write: { markdown, _, _ in
+                written = markdown; return expected
+            })
         let inp = input(participants: ["Ada"])
 
         let outcome = try await pipe.run(inp) { _ in }
@@ -83,9 +87,12 @@ import Testing
     @Test func deletedCallIsNeverSummarized() async throws {
         var summarized = false
         let pipe = NotePipeline(
-            transcript: TranscriptBuilder(transcriber: FakeTranscriber(others: [makeSegment(0, "hi", .others)]),
-                                          diarizer: FakeDiarizer()),
-            summarize: { _ in summarized = true; return NoteSummary(topic: nil, markdown: "summary") },
+            transcript: TranscriptBuilder(
+                transcriber: FakeTranscriber(others: [makeSegment(0, "hi", .others)]),
+                diarizer: FakeDiarizer()),
+            summarize: { _ in
+                summarized = true; return NoteSummary(topic: nil, markdown: "summary")
+            },
             confirmRoster: { _ in nil }
         )
         let outcome = try await pipe.run(input(summaryEnabled: true)) { _ in }
@@ -97,9 +104,12 @@ import Testing
         var summarizedSpeakers: [String] = []
         let roster = ReviewedRoster(voices: [ReviewedVoice(label: "Others", name: "Ada")], others: [])
         let pipe = NotePipeline(
-            transcript: TranscriptBuilder(transcriber: FakeTranscriber(others: [makeSegment(0, "hi", .others)]),
-                                          diarizer: FakeDiarizer()),
-            summarize: { segments in summarizedSpeakers = segments.map(\.speaker.label); return nil },
+            transcript: TranscriptBuilder(
+                transcriber: FakeTranscriber(others: [makeSegment(0, "hi", .others)]),
+                diarizer: FakeDiarizer()),
+            summarize: { segments in
+                summarizedSpeakers = segments.map(\.speaker.label); return nil
+            },
             confirmRoster: { _ in roster },
             writeNote: { _, _, folder in folder }
         )
@@ -116,8 +126,13 @@ import Testing
 
     @Test func reviewSeesEveryVoiceAndTheDetectedRosterSorted() async throws {
         var seen: RosterReview?
-        _ = try await pipeline(others: [makeSegment(0, "hello", .others)], mine: [makeSegment(1, "hi back", .me)], confirm: { request in seen = request; return request.unreviewed })
-            .run(input(participants: ["Zoe", "Ada"])) { _ in }
+        _ = try await pipeline(
+            others: [makeSegment(0, "hello", .others)], mine: [makeSegment(1, "hi back", .me)],
+            confirm: { request in
+                seen = request; return request.unreviewed
+            }
+        )
+        .run(input(participants: ["Zoe", "Ada"])) { _ in }
 
         #expect(seen?.voices.map(\.label) == ["Others", "Me"])
         #expect(seen?.voices.map(\.sample) == ["hello", "hi back"])
@@ -130,10 +145,14 @@ import Testing
         let roster = ReviewedRoster(voices: [ReviewedVoice(label: "Speaker 1", name: "Ada")], others: [])
         let inp = input(source: .inPerson)
 
-        _ = try await pipeline(mine: segments,
-                               confirm: { _ in roster },
-                               write: { markdown, _, folder in written = markdown; return folder })
-            .run(inp) { _ in }
+        _ = try await pipeline(
+            mine: segments,
+            confirm: { _ in roster },
+            write: { markdown, _, folder in
+                written = markdown; return folder
+            }
+        )
+        .run(inp) { _ in }
 
         #expect(written?.contains("Ada:** morning all") == true)
         #expect(inp.session.participants == ["Ada"])
@@ -156,9 +175,13 @@ import Testing
     @Test func summaryTopicNamesTheNote() async throws {
         var saved: NoteMetadata?
         var written: String?
-        _ = try await pipeline(summary: NoteSummary(topic: "Weekly goals", markdown: "- done"),
-                               write: { markdown, metadata, folder in written = markdown; saved = metadata; return folder })
-            .run(input(summaryEnabled: true)) { _ in }
+        _ = try await pipeline(
+            summary: NoteSummary(topic: "Weekly goals", markdown: "- done"),
+            write: { markdown, metadata, folder in
+                written = markdown; saved = metadata; return folder
+            }
+        )
+        .run(input(summaryEnabled: true)) { _ in }
         #expect(saved?.topic == "Weekly goals")
         #expect(written?.contains("## Summary\n- done") == true)
     }
@@ -185,9 +208,13 @@ import Testing
         try inp.session.saveTranscript([makeSegment(0, "from the first run", .me)])
 
         var written: String?
-        _ = try await pipeline(others: [makeSegment(0, "transcribed again", .others)],
-                               write: { markdown, _, folder in written = markdown; return folder })
-            .run(inp) { _ in }
+        _ = try await pipeline(
+            others: [makeSegment(0, "transcribed again", .others)],
+            write: { markdown, _, folder in
+                written = markdown; return folder
+            }
+        )
+        .run(inp) { _ in }
 
         #expect(written?.contains("from the first run") == true)
         #expect(written?.contains("transcribed again") == false)
@@ -196,9 +223,11 @@ import Testing
     @Test(arguments: [true, false])
     func transcriptIsCachedOnlyWhenRequestedDiarizationSucceeded(diarizationFails: Bool) async throws {
         let pipe = NotePipeline(
-            transcript: TranscriptBuilder(transcriber: FakeTranscriber(others: [makeSegment(0, "hi", .others)]),
-                                          diarizer: FakeDiarizer(spans: [SpeakerSpan(start: 0, end: 1, speakerId: 0)],
-                                                                 shouldThrow: diarizationFails)),
+            transcript: TranscriptBuilder(
+                transcriber: FakeTranscriber(others: [makeSegment(0, "hi", .others)]),
+                diarizer: FakeDiarizer(
+                    spans: [SpeakerSpan(start: 0, end: 1, speakerId: 0)],
+                    shouldThrow: diarizationFails)),
             summarize: { _ in nil },
             confirmRoster: nil,
             writeNote: { _, _, folder in folder }

@@ -19,8 +19,10 @@ extension NSPanel {
 
         if let screen = NSScreen.main?.visibleFrame {
             let size = panel.frame.size
-            panel.setFrameOrigin(NSPoint(x: screen.maxX - size.width - 24,
-                                         y: screen.minY + 24))
+            panel.setFrameOrigin(
+                NSPoint(
+                    x: screen.maxX - size.width - 24,
+                    y: screen.minY + 24))
         }
         return panel
     }

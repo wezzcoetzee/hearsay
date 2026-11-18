@@ -65,8 +65,10 @@ enum Summary {
     /// The common failures in words a user can act on; anything else as the system
     /// describes it.
     static func plainReason(for error: Error, backend: SummaryBackend) -> String {
-        let unreachable: Set<URLError.Code> = [.cannotConnectToHost, .cannotFindHost, .networkConnectionLost,
-                                               .notConnectedToInternet, .timedOut]
+        let unreachable: Set<URLError.Code> = [
+            .cannotConnectToHost, .cannotFindHost, .networkConnectionLost,
+            .notConnectedToInternet, .timedOut,
+        ]
         if let urlError = error as? URLError, unreachable.contains(urlError.code) {
             return backend == .local ? "Ollama isn't running" : "Anthropic couldn't be reached"
         }
@@ -132,7 +134,7 @@ struct OllamaSummarizer: Summarizer {
             "model": model,
             "prompt": prompt,
             "stream": false,
-            "options": ["num_ctx": Self.contextLength(forPrompt: prompt)]
+            "options": ["num_ctx": Self.contextLength(forPrompt: prompt)],
         ])
 
         let data: Data
@@ -140,18 +142,20 @@ struct OllamaSummarizer: Summarizer {
         do {
             (data, response) = try await URLSession.shared.data(for: request)
         } catch let error as URLError where error.code != .cancelled {
-            throw SummaryError.backendUnavailable(error.code == .timedOut
-                ? "Ollama timed out before finishing the summary"
-                : "Ollama isn't reachable on localhost:11434")
+            throw SummaryError.backendUnavailable(
+                error.code == .timedOut
+                    ? "Ollama timed out before finishing the summary"
+                    : "Ollama isn't reachable on localhost:11434")
         }
         return try Self.parse(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0, model: model)
     }
 
     static func parse(_ data: Data, status: Int, model: String) throws -> String {
         guard status == 200 else {
-            throw SummaryError.backendUnavailable(status == 404
-                ? "Ollama has no model named \(model). Run `ollama pull \(model)`"
-                : "Ollama returned \(status)")
+            throw SummaryError.backendUnavailable(
+                status == 404
+                    ? "Ollama has no model named \(model). Run `ollama pull \(model)`"
+                    : "Ollama returned \(status)")
         }
         struct Reply: Decodable { let response: String }
         guard let reply = try? JSONDecoder().decode(Reply.self, from: data) else {
@@ -182,7 +186,7 @@ struct ClaudeSummarizer: Summarizer {
             "max_tokens": 16_000,
             "output_config": ["effort": "medium"],
             "fallbacks": "default",
-            "messages": [["role": "user", "content": Summary.prompt(for: transcript)]]
+            "messages": [["role": "user", "content": Summary.prompt(for: transcript)]],
         ])
 
         let (data, response) = try await URLSession.shared.data(for: request)

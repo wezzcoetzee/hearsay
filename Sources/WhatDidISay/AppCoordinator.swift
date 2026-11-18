@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 @MainActor
 final class AppCoordinator: ObservableObject {
@@ -116,8 +116,10 @@ final class AppCoordinator: ObservableObject {
 
     /// Starts a recording the prompt offered, and brings the prompt back to say so if
     /// capture didn't start: the prompt is gone and the menu usually closed.
-    private func startFromPrompt(_ source: RecordingSource,
-                                 _ start: (RecordingController) async -> Void) async {
+    private func startFromPrompt(
+        _ source: RecordingSource,
+        _ start: (RecordingController) async -> Void
+    ) async {
         await start(recorder)
         if recorder.failedToStart, case .failed(let reason) = recorder.state {
             confirmation.presentFailure(source: source, reason: reason)

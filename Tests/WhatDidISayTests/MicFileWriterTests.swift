@@ -1,5 +1,6 @@
-import Testing
 import AVFoundation
+import Testing
+
 @testable import WhatDidISay
 
 @Suite struct MicFileWriterTests {

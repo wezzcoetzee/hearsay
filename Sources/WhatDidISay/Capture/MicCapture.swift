@@ -1,5 +1,5 @@
-import Foundation
 import AVFoundation
+import Foundation
 import ObjCExceptionCatcher
 
 /// Writes tap buffers to the mic file from the audio thread, while `close()` may run on

@@ -1,6 +1,6 @@
-import Foundation
-import Combine
 import AppKit
+import Combine
+import Foundation
 
 @MainActor
 final class RecordingController: ObservableObject {
@@ -75,9 +75,11 @@ final class RecordingController: ObservableObject {
     /// or `nil` when the user chooses to delete the call.
     var confirmRoster: ((RosterReview) async -> ReviewedRoster?)?
 
-    init(settings: Settings, permissions: PermissionsManager,
-         history: RecordingHistory = RecordingHistory(),
-         recordingsFolder: URL = RecordingSession.recordingsFolder) {
+    init(
+        settings: Settings, permissions: PermissionsManager,
+        history: RecordingHistory = RecordingHistory(),
+        recordingsFolder: URL = RecordingSession.recordingsFolder
+    ) {
         self.settings = settings
         self.permissions = permissions
         self.history = history
@@ -89,8 +91,9 @@ final class RecordingController: ObservableObject {
         activityMonitor.onEnded = { [weak self] in
             Task { await self?.stop() }
         }
-        needsAttention = RecordingSession.unfinished(in: recordingsFolder,
-                                                     notedPaths: Set(history.entries.compactMap(\.recordingPath)))
+        needsAttention = RecordingSession.unfinished(
+            in: recordingsFolder,
+            notedPaths: Set(history.entries.compactMap(\.recordingPath)))
     }
 
     private func bundleID(for source: RecordingSource) async -> String? {
@@ -145,9 +148,10 @@ final class RecordingController: ObservableObject {
         guard permissions.isGranted(for: source) else {
             // Name only what's missing: a mic grant applies at once, Screen Recording
             // only after a relaunch.
-            state = .failed(permissions.microphone.isGranted
-                            ? "Recording a call needs Screen Recording. Allow it in System Settings, then relaunch."
-                            : "Allow Microphone access, then try again.")
+            state = .failed(
+                permissions.microphone.isGranted
+                    ? "Recording a call needs Screen Recording. Allow it in System Settings, then relaunch."
+                    : "Allow Microphone access, then try again.")
             return
         }
         guard settings.hasOutputFolder else {
@@ -360,10 +364,13 @@ final class RecordingController: ObservableObject {
                     NSLog("Couldn't mark session noted: \(error)")
                 }
                 history.add(session)
-                let warnings = [session.summaryFailure.map { "Saved without a summary: \($0)." },
-                                archiveOrDeleteAudio(for: session)].compactMap { $0 }
-                confirmSave(folder: folder, noteURL: noteURL,
-                            warning: warnings.isEmpty ? nil : warnings.joined(separator: " "))
+                let warnings = [
+                    session.summaryFailure.map { "Saved without a summary: \($0)." },
+                    archiveOrDeleteAudio(for: session),
+                ].compactMap { $0 }
+                confirmSave(
+                    folder: folder, noteURL: noteURL,
+                    warning: warnings.isEmpty ? nil : warnings.joined(separator: " "))
                 state = .idle
             case .deleted:
                 inFlight = nil
@@ -412,8 +419,9 @@ final class RecordingController: ObservableObject {
         lastSave = SaveConfirmation(noteURL: noteURL, folderName: folder.lastPathComponent, warning: warning)
         saveClearTask?.cancel()
         saveClearTask = nil
-        Announcer.post(warning.map { "Note saved to \(folder.lastPathComponent). \($0)" }
-                       ?? "Note saved to \(folder.lastPathComponent).")
+        Announcer.post(
+            warning.map { "Note saved to \(folder.lastPathComponent). \($0)" }
+                ?? "Note saved to \(folder.lastPathComponent).")
     }
 
     /// The menu was opened. A plain save confirmation fades a few seconds after it has
@@ -497,21 +505,23 @@ enum CaptureIssue: Equatable, Sendable {
 }
 
 #if DEBUG
-extension RecordingController {
-    /// Puts the menu into a given state for the screenshot catalog without touching
-    /// audio hardware. Debug builds only.
-    func stageForScreenshots(_ state: State,
-                             lastSave: SaveConfirmation? = nil,
-                             needsAttention: [RecordingSession] = [],
-                             failedToStart: Bool = false,
-                             lastSource: RecordingSource = .manual,
-                             captureWarning: CaptureIssue? = nil) {
-        self.state = state
-        self.lastSave = lastSave
-        self.needsAttention = needsAttention
-        self.failedToStart = failedToStart
-        self.lastSource = lastSource
-        self.captureWarning = captureWarning
+    extension RecordingController {
+        /// Puts the menu into a given state for the screenshot catalog without touching
+        /// audio hardware. Debug builds only.
+        func stageForScreenshots(
+            _ state: State,
+            lastSave: SaveConfirmation? = nil,
+            needsAttention: [RecordingSession] = [],
+            failedToStart: Bool = false,
+            lastSource: RecordingSource = .manual,
+            captureWarning: CaptureIssue? = nil
+        ) {
+            self.state = state
+            self.lastSave = lastSave
+            self.needsAttention = needsAttention
+            self.failedToStart = failedToStart
+            self.lastSource = lastSource
+            self.captureWarning = captureWarning
+        }
     }
-}
 #endif

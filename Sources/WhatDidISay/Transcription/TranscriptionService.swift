@@ -70,7 +70,8 @@ final class TranscriptionService: Transcribing, @unchecked Sendable {
     private static func stripSpecialTokens(_ raw: String) -> String {
         let range = NSRange(raw.startIndex..., in: raw)
         let stripped = specialTokenPattern.stringByReplacingMatches(in: raw, range: range, withTemplate: " ")
-        return stripped
+        return
+            stripped
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }

@@ -1,10 +1,10 @@
-import Foundation
 import AVFoundation
-import CoreGraphics
-import ScreenCaptureKit
 import AppKit
 import ApplicationServices
 import Combine
+import CoreGraphics
+import Foundation
+import ScreenCaptureKit
 
 @MainActor
 final class PermissionsManager: ObservableObject {
@@ -120,18 +120,19 @@ final class PermissionsManager: ObservableObject {
     }
 
     static func systemStatus() -> (microphone: Status, screenRecording: Status) {
-        let microphone: Status = switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized: .granted
-        case .notDetermined: .unknown
-        default: .denied
-        }
+        let microphone: Status =
+            switch AVCaptureDevice.authorizationStatus(for: .audio) {
+            case .authorized: .granted
+            case .notDetermined: .unknown
+            default: .denied
+            }
         return (microphone, CGPreflightScreenCaptureAccess() ? .granted : .denied)
     }
 }
 
 #if DEBUG
-extension PermissionsManager {
-    /// The state after asking for Screen Recording, for the screenshot catalog.
-    func stageScreenRecordingRequested() { screenRecordingRequested = true }
-}
+    extension PermissionsManager {
+        /// The state after asking for Screen Recording, for the screenshot catalog.
+        func stageScreenRecordingRequested() { screenRecordingRequested = true }
+    }
 #endif
