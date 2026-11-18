@@ -35,7 +35,7 @@ enum RecordingSource: String, Codable {
         "company.thebrowser.Browser",
         "com.vivaldi.Vivaldi",
         "org.mozilla.firefox",
-        "com.apple.Safari"
+        "com.apple.Safari",
     ]
 
     /// In-person meetings are recorded from the microphone alone: everyone is in the
@@ -89,8 +89,9 @@ final class RecordingSession {
 
     convenience init(source: RecordingSource, startedAt: Date = Date(), in folder: URL = recordingsFolder) {
         let id = UUID()
-        self.init(id: id, source: source, startedAt: startedAt, progress: .recording,
-                  directory: folder.appendingPathComponent(Self.folderName(for: startedAt, id: id), isDirectory: true))
+        self.init(
+            id: id, source: source, startedAt: startedAt, progress: .recording,
+            directory: folder.appendingPathComponent(Self.folderName(for: startedAt, id: id), isDirectory: true))
     }
 
     private init(id: UUID, source: RecordingSource, startedAt: Date, progress: Progress, directory: URL) {
@@ -127,8 +128,9 @@ final class RecordingSession {
     func advance(to progress: Progress) throws {
         self.progress = progress
         try prepareDirectory()
-        let manifest = Manifest(id: id, source: source, startedAt: startedAt, finishedAt: finishedAt,
-                                progress: progress, detectedParticipants: detectedParticipants)
+        let manifest = Manifest(
+            id: id, source: source, startedAt: startedAt, finishedAt: finishedAt,
+            progress: progress, detectedParticipants: detectedParticipants)
         try JSONEncoder().encode(manifest).write(to: manifestURL, options: .atomic)
     }
 
@@ -148,10 +150,12 @@ final class RecordingSession {
     /// from before progress was tracked have no manifest, so they're rebuilt from
     /// their name and audio unless `notedPaths` (from history) says they were saved.
     static func unfinished(in folder: URL = recordingsFolder, notedPaths: Set<String> = []) -> [RecordingSession] {
-        let folders = (try? FileManager.default.contentsOfDirectory(
-            at: folder, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
+        let folders =
+            (try? FileManager.default.contentsOfDirectory(
+                at: folder, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
         let noted = Set(notedPaths.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path })
-        return folders
+        return
+            folders
             .filter { !noted.contains($0.resolvingSymlinksInPath().path) }
             .compactMap(recover)
             .filter { $0.progress != .noted }
@@ -165,15 +169,18 @@ final class RecordingSession {
 
         let session: RecordingSession
         if let data = try? Data(contentsOf: manifestURL(in: directory)),
-           let manifest = try? JSONDecoder().decode(Manifest.self, from: data) {
-            session = RecordingSession(id: manifest.id, source: manifest.source, startedAt: manifest.startedAt,
-                                       progress: manifest.progress, directory: directory)
+            let manifest = try? JSONDecoder().decode(Manifest.self, from: data)
+        {
+            session = RecordingSession(
+                id: manifest.id, source: manifest.source, startedAt: manifest.startedAt,
+                progress: manifest.progress, directory: directory)
             session.finishedAt = manifest.finishedAt
             session.detectedParticipants = manifest.detectedParticipants
         } else if let startedAt = folderDateFormatter().date(from: String(directory.lastPathComponent.prefix(19))) {
             // Older recordings didn't note their source. Every one of them was a call.
-            session = RecordingSession(id: UUID(), source: .manual, startedAt: startedAt,
-                                       progress: .recorded, directory: directory)
+            session = RecordingSession(
+                id: UUID(), source: .manual, startedAt: startedAt,
+                progress: .recorded, directory: directory)
         } else {
             return nil
         }

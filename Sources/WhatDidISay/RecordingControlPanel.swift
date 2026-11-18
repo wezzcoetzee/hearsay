@@ -1,6 +1,6 @@
-import SwiftUI
 import AppKit
 import Combine
+import SwiftUI
 
 @MainActor
 final class RecordingControlPanelController: ObservableObject {
@@ -80,9 +80,10 @@ final class RecordingControlPanelController: ObservableObject {
         let screen = panel.screen?.visibleFrame ?? current
         let pinsRight = current.midX > screen.midX
         let pinsBottom = current.midY < screen.midY
-        let target = NSRect(x: pinsRight ? current.maxX - size.width : current.minX,
-                            y: pinsBottom ? current.minY : current.maxY - size.height,
-                            width: size.width, height: size.height)
+        let target = NSRect(
+            x: pinsRight ? current.maxX - size.width : current.minX,
+            y: pinsBottom ? current.minY : current.maxY - size.height,
+            width: size.width, height: size.height)
         NSAnimationContext.runAnimationGroup { context in
             context.duration = animates ? Self.resizeDuration : 0
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -136,8 +137,10 @@ struct RecordingControlPanelView: View {
                     timer.font(.title3).monospacedDigit().foregroundStyle(.primary)
                 }
                 Spacer(minLength: 4)
-                IconButton(symbol: "arrow.down.right.and.arrow.up.left",
-                           label: "Collapse recording panel", help: "Collapse") {
+                IconButton(
+                    symbol: "arrow.down.right.and.arrow.up.left",
+                    label: "Collapse recording panel", help: "Collapse"
+                ) {
                     controller.toggleCollapsed()
                 }
 
@@ -153,19 +156,22 @@ struct RecordingControlPanelView: View {
             }
 
             HStack(spacing: 14) {
-                ChannelMeter(symbol: "mic.fill", name: "Microphone level",
-                             level: levels.mic, isSilent: levels.micSilent)
+                ChannelMeter(
+                    symbol: "mic.fill", name: "Microphone level",
+                    level: levels.mic, isSilent: levels.micSilent)
                 if levels.tracksSystemAudio {
-                    ChannelMeter(symbol: "speaker.wave.2.fill", name: "Call audio level",
-                                 level: levels.system, isSilent: false)
+                    ChannelMeter(
+                        symbol: "speaker.wave.2.fill", name: "Call audio level",
+                        level: levels.system, isSilent: false)
                 }
                 Spacer(minLength: 0)
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .frame(width: RecordingControlPanelController.expandedSize.width,
-               height: RecordingControlPanelController.expandedSize.height)
+        .frame(
+            width: RecordingControlPanelController.expandedSize.width,
+            height: RecordingControlPanelController.expandedSize.height)
     }
 
     /// The source while all is well; the problem, flagged, when something isn't.
@@ -208,8 +214,10 @@ struct RecordingControlPanelView: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12)
-            .frame(width: RecordingControlPanelController.collapsedSize.width,
-                   height: RecordingControlPanelController.collapsedSize.height)
+            .frame(
+                width: RecordingControlPanelController.collapsedSize.width,
+                height: RecordingControlPanelController.collapsedSize.height
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

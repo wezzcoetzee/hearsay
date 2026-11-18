@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import WhatDidISay
 
 @Suite @MainActor struct TranscriptBuilderTests {
@@ -75,13 +76,15 @@ import Testing
     }
 
     @Test func micAloneSplitsTheRoomByDiarization() async throws {
-        let transcriber = FakeTranscriber(others: [], mine: [
-            makeSegment(0, "morning", .numbered(0)),
-            makeSegment(10, "morning back", .numbered(0))
-        ])
+        let transcriber = FakeTranscriber(
+            others: [],
+            mine: [
+                makeSegment(0, "morning", .numbered(0)),
+                makeSegment(10, "morning back", .numbered(0)),
+            ])
         let diarizer = FakeDiarizer(spans: [
             SpeakerSpan(start: 0, end: 2, speakerId: 0),
-            SpeakerSpan(start: 10, end: 12, speakerId: 1)
+            SpeakerSpan(start: 10, end: 12, speakerId: 1),
         ])
         let out = try await builder(transcriber, diarizer).build(system: nil, mic: mic, model: "base", diarize: true)
         #expect(out.segments.map(\.speaker) == [Speaker.numbered(0), Speaker.numbered(1)])

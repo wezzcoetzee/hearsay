@@ -1,6 +1,6 @@
-import SwiftUI
 import AppKit
 import Combine
+import SwiftUI
 
 @MainActor
 final class OnboardingController: ObservableObject {
@@ -34,11 +34,12 @@ final class OnboardingController: ObservableObject {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let view = OnboardingView(permissions: permissions,
-                                  settings: settings,
-                                  startingAt: OnboardingView.Step.resuming(permissions: permissions, settings: settings),
-                                  onClose: { [weak self] in self?.finish() },
-                                  onRelaunch: { OnboardingController.relaunch() })
+        let view = OnboardingView(
+            permissions: permissions,
+            settings: settings,
+            startingAt: OnboardingView.Step.resuming(permissions: permissions, settings: settings),
+            onClose: { [weak self] in self?.finish() },
+            onRelaunch: { OnboardingController.relaunch() })
         let window = SetupWindow(
             contentRect: NSRect(origin: .zero, size: OnboardingView.size),
             styleMask: [.titled, .closable, .fullSizeContentView],
@@ -154,9 +155,11 @@ struct OnboardingView: View {
     /// Not published by macOS, so it's re-read whenever the app becomes active again.
     @State private var accessibilityTrusted: Bool
 
-    init(permissions: PermissionsManager, settings: Settings, startingAt step: Step = .welcome,
-         accessibilityTrusted: Bool = PermissionsManager.accessibilityTrusted,
-         onClose: @escaping () -> Void, onRelaunch: @escaping () -> Void) {
+    init(
+        permissions: PermissionsManager, settings: Settings, startingAt step: Step = .welcome,
+        accessibilityTrusted: Bool = PermissionsManager.accessibilityTrusted,
+        onClose: @escaping () -> Void, onRelaunch: @escaping () -> Void
+    ) {
         self.permissions = permissions
         self.settings = settings
         self.onClose = onClose
@@ -219,20 +222,24 @@ struct OnboardingView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            Label("Audio never leaves your Mac. If you turn on cloud summaries, only the finished transcript text is sent to Anthropic.",
-                  systemImage: "lock.fill")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+            Label(
+                "Audio never leaves your Mac. If you turn on cloud summaries, only the finished transcript text is sent to Anthropic.",
+                systemImage: "lock.fill"
+            )
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
         }
         .frame(maxWidth: .infinity)
     }
 
     private var microphoneStep: some View {
-        stepLayout(icon: "mic.fill", title: "Microphone",
-                   allowed: permissions.microphone == .unknown ? nil : permissions.microphone.isGranted) {
+        stepLayout(
+            icon: "mic.fill", title: "Microphone",
+            allowed: permissions.microphone == .unknown ? nil : permissions.microphone.isGranted
+        ) {
             Text("Records your side of a call, and everyone in the room when you record in person.")
             if permissions.microphone == .denied {
                 Caution("Microphone access is off. Turn on \(AppInfo.displayName) in System Settings, under Privacy & Security, Microphone.")
@@ -245,8 +252,10 @@ struct OnboardingView: View {
         // macOS reports "not allowed" for both never-asked and refused, so status waits
         // until it's allowed or the user has asked.
         let granted = permissions.screenRecording.isGranted
-        return stepLayout(icon: "rectangle.inset.filled.and.person.filled", title: "Screen Recording",
-                          allowed: granted || permissions.screenRecordingRequested ? granted : nil) {
+        return stepLayout(
+            icon: "rectangle.inset.filled.and.person.filled", title: "Screen Recording",
+            allowed: granted || permissions.screenRecordingRequested ? granted : nil
+        ) {
             Text("Lets the app hear everyone else on a call. macOS calls this Screen Recording. No video is ever recorded.")
             // macOS can't say whether the prompt was accepted until a relaunch, so this
             // says what has to be true first, and the footer can reopen System Settings.
@@ -318,8 +327,10 @@ struct OnboardingView: View {
 
     /// Icon, title and, for a permission, whether it's allowed on one line; then the
     /// explanation.
-    private func stepLayout<Body: View>(icon: String, title: String, allowed: Bool? = nil,
-                                        @ViewBuilder body: () -> Body) -> some View {
+    private func stepLayout<Body: View>(
+        icon: String, title: String, allowed: Bool? = nil,
+        @ViewBuilder body: () -> Body
+    ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 Image(systemName: icon).font(.title).foregroundStyle(.tint).frame(width: 40)
@@ -327,9 +338,11 @@ struct OnboardingView: View {
                 Text(title).font(.title3).bold()
                 Spacer()
                 if let allowed {
-                    PermissionStatus(name: title, allowed: allowed,
-                                     pendingRelaunch: title == "Screen Recording" && permissions.screenRecordingRequested)
-                        .font(.callout)
+                    PermissionStatus(
+                        name: title, allowed: allowed,
+                        pendingRelaunch: title == "Screen Recording" && permissions.screenRecordingRequested
+                    )
+                    .font(.callout)
                 }
             }
             VStack(alignment: .leading, spacing: 12) {
@@ -361,12 +374,18 @@ struct OnboardingView: View {
         case .screenRecording:
             if permissions.screenRecording.isGranted { return Actions(primary: ("Continue", next)) }
             if permissions.screenRecordingRequested {
-                return Actions(secondary: ("Open Settings", { permissions.openSettings(.screenRecording) }),
-                               primary: ("Relaunch Now", onRelaunch))
+                return Actions(
+                    secondary: ("Open Settings", { permissions.openSettings(.screenRecording) }),
+                    primary: ("Relaunch Now", onRelaunch))
             }
-            return Actions(secondary: ("Skip", next), primary: ("Allow Screen Recording…", {
-                Task { await permissions.request(.screenRecording) }
-            }))
+            return Actions(
+                secondary: ("Skip", next),
+                primary: (
+                    "Allow Screen Recording…",
+                    {
+                        Task { await permissions.request(.screenRecording) }
+                    }
+                ))
         case .notesFolder:
             return settings.hasOutputFolder
                 ? Actions(primary: ("Continue", next))

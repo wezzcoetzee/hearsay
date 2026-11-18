@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 struct HistoryEntry: Codable, Identifiable {
     let id: UUID

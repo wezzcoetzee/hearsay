@@ -35,9 +35,11 @@ extension RecordingSource {
 @MainActor
 enum Announcer {
     static func post(_ text: String) {
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: text,
-            .priority: NSAccessibilityPriorityLevel.high.rawValue
-        ])
+        NSAccessibility.post(
+            element: NSApp as Any, notification: .announcementRequested,
+            userInfo: [
+                .announcement: text,
+                .priority: NSAccessibilityPriorityLevel.high.rawValue,
+            ])
     }
 }

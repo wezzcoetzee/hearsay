@@ -1,12 +1,13 @@
 import Foundation
 import Testing
+
 @testable import WhatDidISay
 
 @Suite struct SummaryTests {
     @Test func transcriptTextFormatsEachSegmentWithTimestampAndSpeaker() {
         let text = Summary.transcriptText([
             makeSegment(0, "hi there", .me),
-            makeSegment(65, "hello", .others)
+            makeSegment(65, "hello", .others),
         ])
         #expect(text == "[00:00] Me: hi there\n[01:05] Others: hello")
     }
@@ -47,7 +48,8 @@ import Testing
     }
 
     @Test func claudeSummaryIsTheTextBlocksWithoutThinking() throws {
-        let text = try claude("""
+        let text = try claude(
+            """
             {"stop_reason":"end_turn","content":[
               {"type":"thinking","thinking":"hmm"},{"type":"text","text":"\\n- Point\\n"}]}
             """)

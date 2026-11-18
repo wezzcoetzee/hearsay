@@ -6,18 +6,20 @@ let scale = canvas / 1024.0
 
 func px(_ v: Double) -> CGFloat { CGFloat(v * scale) }
 
-guard let rep = NSBitmapImageRep(
-    bitmapDataPlanes: nil,
-    pixelsWide: Int(canvas),
-    pixelsHigh: Int(canvas),
-    bitsPerSample: 8,
-    samplesPerPixel: 4,
-    hasAlpha: true,
-    isPlanar: false,
-    colorSpaceName: .deviceRGB,
-    bytesPerRow: 0,
-    bitsPerPixel: 0
-) else { fatalError("no rep") }
+guard
+    let rep = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: Int(canvas),
+        pixelsHigh: Int(canvas),
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    )
+else { fatalError("no rep") }
 
 let nsCtx = NSGraphicsContext(bitmapImageRep: rep)!
 NSGraphicsContext.current = nsCtx
@@ -97,28 +99,31 @@ let dotCenter = CGPoint(x: px(canvas - bodyInset - 150), y: px(bodyInset + 150))
 ctx.saveGState()
 ctx.setShadow(offset: CGSize(width: 0, height: px(-6)), blur: px(16), color: color(0x000000, 0.30))
 ctx.setFillColor(color(0xFF3B30))
-ctx.addEllipse(in: CGRect(
-    x: dotCenter.x - px(dotRadius),
-    y: dotCenter.y - px(dotRadius),
-    width: px(dotRadius * 2),
-    height: px(dotRadius * 2)
-))
+ctx.addEllipse(
+    in: CGRect(
+        x: dotCenter.x - px(dotRadius),
+        y: dotCenter.y - px(dotRadius),
+        width: px(dotRadius * 2),
+        height: px(dotRadius * 2)
+    ))
 ctx.fillPath()
 ctx.restoreGState()
 
 ctx.setFillColor(color(0xFFFFFF, 0.30))
-ctx.addEllipse(in: CGRect(
-    x: dotCenter.x - px(dotRadius),
-    y: dotCenter.y - px(dotRadius),
-    width: px(dotRadius * 2),
-    height: px(dotRadius * 2)
-))
-ctx.addEllipse(in: CGRect(
-    x: dotCenter.x - px(dotRadius - 12),
-    y: dotCenter.y - px(dotRadius - 12),
-    width: px((dotRadius - 12) * 2),
-    height: px((dotRadius - 12) * 2)
-))
+ctx.addEllipse(
+    in: CGRect(
+        x: dotCenter.x - px(dotRadius),
+        y: dotCenter.y - px(dotRadius),
+        width: px(dotRadius * 2),
+        height: px(dotRadius * 2)
+    ))
+ctx.addEllipse(
+    in: CGRect(
+        x: dotCenter.x - px(dotRadius - 12),
+        y: dotCenter.y - px(dotRadius - 12),
+        width: px((dotRadius - 12) * 2),
+        height: px((dotRadius - 12) * 2)
+    ))
 ctx.fillPath(using: .evenOdd)
 
 let outPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "icon-1024.png"

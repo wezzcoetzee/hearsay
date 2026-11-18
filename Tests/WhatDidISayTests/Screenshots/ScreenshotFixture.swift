@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+
 @testable import WhatDidISay
 
 /// The app's models wired up in isolation: preferences in a throwaway defaults
@@ -38,8 +39,9 @@ final class ScreenshotFixture {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
         suiteName = "com.wcoetzee.whatdidisay.screenshots.\(UUID().uuidString)"
-        settings = Settings(defaults: UserDefaults(suiteName: suiteName)!,
-                            keychain: Keychain(service: "com.wcoetzee.whatdidisay.screenshots"))
+        settings = Settings(
+            defaults: UserDefaults(suiteName: suiteName)!,
+            keychain: Keychain(service: "com.wcoetzee.whatdidisay.screenshots"))
         settings.hasAcknowledgedConsent = true
 
         let grants = Grants(microphone: microphone, screenRecording: screenRecording)
@@ -47,8 +49,9 @@ final class ScreenshotFixture {
         permissions.refresh()
 
         history = RecordingHistory(fileURL: root.appendingPathComponent("history.json"))
-        recorder = RecordingController(settings: settings, permissions: permissions, history: history,
-                                       recordingsFolder: root.appendingPathComponent("Recordings", isDirectory: true))
+        recorder = RecordingController(
+            settings: settings, permissions: permissions, history: history,
+            recordingsFolder: root.appendingPathComponent("Recordings", isDirectory: true))
         onboarding = OnboardingController(permissions: permissions, settings: settings)
 
         if vault { settings.useOutputFolder(try folder("Notes")) }
@@ -62,9 +65,10 @@ final class ScreenshotFixture {
 
     /// A finished call, `minutesAgo` before 9:41, with a real note file behind it.
     func session(_ source: RecordingSource, minutesAgo: Int, lasting minutes: Int) -> RecordingSession {
-        let session = RecordingSession(source: source,
-                                       startedAt: Self.morning.addingTimeInterval(TimeInterval(-minutesAgo * 60)),
-                                       in: root.appendingPathComponent("Recordings", isDirectory: true))
+        let session = RecordingSession(
+            source: source,
+            startedAt: Self.morning.addingTimeInterval(TimeInterval(-minutesAgo * 60)),
+            in: root.appendingPathComponent("Recordings", isDirectory: true))
         session.finishedAt = session.startedAt.addingTimeInterval(TimeInterval(minutes * 60))
         return session
     }
@@ -73,7 +77,7 @@ final class ScreenshotFixture {
         let notes = try folder("Notes")
         let calls: [(RecordingSource, Int, [String])] = [
             (.inPerson, 60 * 22, ["Me", "Dana", "Sam", "Lee"]), (.teams, 60 * 4, ["Me", "Ana Ruiz", "Ben Ode", "Cy Tan", "Dee Moss", "Eli Ray", "Fay Lu"]),
-            (.googleMeet, 95, ["Me", "Tom Hill", "Jo Park"]), (.slack, 20, ["Me", "Priya Shah", "Marcus Lee"])
+            (.googleMeet, 95, ["Me", "Tom Hill", "Jo Park"]), (.slack, 20, ["Me", "Priya Shah", "Marcus Lee"]),
         ]
         for (source, minutesAgo, people) in calls {
             let call = session(source, minutesAgo: minutesAgo, lasting: 25)
