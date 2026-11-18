@@ -28,15 +28,7 @@ open build/WhatDidISay.app
 
 `bundle.sh` compiles the executable, wraps it in a `.app`, and signs it with the hardened runtime via `Scripts/sign.sh`.
 
-Lint with `./Scripts/lint.sh` (swift-format, config in `.swift-format`); `./Scripts/lint.sh --fix` formats in place first.
-
-### Releasing
-
-```sh
-./Scripts/release.sh 1.2.0   # dist/WhatDidISay-1.2.0.zip and .dmg
-```
-
-Pushing a `v*` tag (`git tag v1.2.0 && git push origin v1.2.0`) runs `.github/workflows/release.yml`, which builds with `release.sh` and attaches the zip and DMG to a GitHub release for the tag. CI has no local signing identity, so release builds are signed ad-hoc.
+To walk through the setup guide again on a Mac that's already set up, launch with `open build/WhatDidISay.app --args -showSetupGuide YES`. It applies to that launch only.
 
 ### Screenshots
 
@@ -50,10 +42,13 @@ Renders every surface (menu, floating panel, call prompt, participant review, on
 
 `setup-signing.sh` creates a self-signed "WhatDidISay Local Signing" certificate in the login keychain. Every build signed with it gets the same designated requirement (bundle id plus certificate), so macOS keeps Microphone and Screen Recording grants across rebuilds. Without it, `sign.sh` falls back to ad-hoc signing, which ties grants to the binary hash and re-prompts after every build. Override the identity with `SIGN_IDENTITY="..."`. The certificate is only meant for local builds: other Macs still need a Developer ID signature and notarization.
 
-On first use, grant the permissions macOS prompts for:
+On first launch a setup guide walks through the permissions and the notes folder:
 
-- **Microphone** — records your side, and the whole room for in-person meetings
-- **Screen Recording** — required for ScreenCaptureKit to capture the other participants' audio. Only calls need it; recording in person works with the microphone alone.
+- **Microphone**: records your side, and the whole room for in-person meetings.
+- **Screen Recording**: required for ScreenCaptureKit to capture the other participants' audio. Only calls need it, so the guide lets you skip it and still record in person. macOS only applies it after a relaunch, so once it's requested the guide offers *Open Settings* and *Relaunch Now*, and resumes where it left off.
+- **Accessibility** (optional): detects Google Meet tabs and reads participant names off the call window. The guide's last step asks for it when you turn on auto-detect; it's also in Settings under Permissions.
+
+The guide ends by opening the menu once, so you can see where the app lives (it has no Dock icon). Esc or the close button leaves it unfinished; the menu still offers any missing step.
 
 ## Usage
 
@@ -62,9 +57,7 @@ On first use, grant the permissions macOS prompts for:
 3. **Manual:** click *Record a Call* (both sides) / *Stop Recording*, or *In Person* beside it for an ad-hoc in-person meeting, which captures the microphone only. Without Screen Recording, the only button is *Record in Person* and auto-detect is off.
 4. **Auto:** toggle *Auto-detect calls* (in the menu or Settings under General). When your mic goes live in a call (Slack or Teams in front, a browser with a live Google Meet tab, or Slack or Teams in the background using the mic itself), a prompt appears at the bottom-right with a 15 second countdown; click *Start Recording* to begin, or *Not Now*. If you do nothing, the prompt dismisses and nothing is recorded. If the last recording is still waiting for speaker names, *Start Recording* parks that one under Needs Attention to name later. The review window's *Name Later* (or Esc, or its close button) does the same. A detected call's recording stops when the call app stops playing audio for 12 seconds, or quits. (Its own mic can't signal the end: this app keeps the mic open while recording.)
 
-   Google Meet detection uses Accessibility to spot a tab whose title carries a Meet meeting code (`abc-defg-hij`), so a browser that's merely open won't trigger a prompt. Grant Accessibility if macOS prompts for it; without it, Meet calls still record via *Record a Call* manually. Capture targets the host browser's audio, so audio from that browser's other tabs can bleed into the recording.
-
-While recording, a small floating panel shows the elapsed time, live mic and call-audio meters, and a warning if either track stops writing mid-call. It sits above every Space, full-screen apps included, without stealing focus. Turn it off with *Show recording panel* in Settings.
+   Google Meet detection uses Accessibility to spot a tab whose title carries a Meet meeting code (`abc-defg-hij`), so a browser that's merely open won't trigger a prompt. Allow Accessibility from the setup guide or Settings under Permissions; without it, Meet calls still record via *Record a Call* manually. Capture targets the host browser's audio, so audio from that browser's other tabs can bleed into the recording.
 
 Notes are written as `YYYY-MM-DD HHMM <Source> - <Topic>.md` with YAML frontmatter and a `Me` / `Others` labeled transcript. The topic comes from the AI summary, so with summaries off (or failing) the name is just `YYYY-MM-DD HHMM <Source>.md`.
 
@@ -82,18 +75,14 @@ Sources/WhatDidISay/
 ├── AppCoordinator.swift           wires detector → confirmation → recorder
 ├── Settings.swift                 model, vault (bookmark), toggles
 ├── SettingsView.swift             settings pane UI
-├── Onboarding.swift               first-run setup flow
-├── PermissionsManager.swift       microphone / screen-recording status
+├── Onboarding.swift               first-run setup guide
+├── PermissionsManager.swift       microphone / screen-recording / accessibility status
 ├── Keychain.swift                 secure storage for the Anthropic API key
 ├── ParticipantReview.swift        post-recording dialog: name each voice, confirm the roster
-├── Capture/                       RecordingController, System/Mic capture, Session,
-│                                  AudioLevels, InterruptionReporter (mid-call failures)
+├── Capture/                       RecordingController, System/Mic capture, Session
 ├── Transcription/                 WhisperKit service, merge, segment model, Diarizer
-├── RecordingControlPanel.swift    floating mid-call panel: timer, meters, warnings
-├── FloatingPanel.swift            NSPanel that floats over every Space without taking focus
-├── LevelMeter.swift               segmented mic / system level meter
-├── ElapsedTime.swift              recording timer formatting
-├── LoginItem.swift                launch at login
+├── RecordingControlPanel.swift    floating timer / stop panel while recording
+├── FloatingPanel.swift            shared setup for the floating panels
 ├── Summary/Summary.swift          Ollama / Claude summarizers
 ├── Pipeline/                      NotePipeline (post-recording sequence), Roster (voice → name)
 ├── Output/                        MarkdownWriter (note rendering), RecordingHistory,
@@ -101,7 +90,6 @@ Sources/WhatDidISay/
 └── Detection/                     CallDetector + CallActivityMonitor + AudioProcesses (Core Audio),
                                    BrowserCallDetector (Meet tab) + ParticipantDetector over AccessibilityTree,
                                    ConfirmationController
-Tests/WhatDidISayTests/            unit tests; Screenshots/ holds the UI catalog and App Store frames
 ```
 
 ## Status
@@ -118,8 +106,7 @@ Tests/WhatDidISayTests/            unit tests; Screenshots/ holds the UI catalog
 ## Optional features
 
 - **AI summary** — toggle in Settings under Summary. *Local* uses [Ollama](https://ollama.com) on `localhost:11434` (set the model name; default `llama3.2`). *Cloud* uses the Anthropic API (`claude-opus-5-5`) — paste an API key (stored in the macOS Keychain). A "## Summary" + action-items section is prepended to each note, and the summary's one-line topic titles the note and its filename. The summary runs after you confirm participants, so it uses real names, and a call you delete is never summarized. If the summary can't be made (Ollama not running, no API key), the note says why instead of silently leaving it out.
-- **Separate remote speakers** — toggle in Settings under Notes to run SpeakerKit diarization on the system-audio track, relabeling `Others` as `Speaker 1`, `Speaker 2`, … Downloads a diarization model on first use. In-person recordings always diarize, whatever this is set to, because it is the only thing separating the voices in the room. If diarization fails, the note keeps the transcript without the speaker split, and that transcript isn't saved for reuse, so processing the recording again retries diarization.
+- **Separate remote speakers** — toggle in Settings under Notes to run SpeakerKit diarization on the system-audio track, relabeling `Others` as `Speaker 1`, `Speaker 2`, … Downloads a diarization model on first use. In-person recordings always diarize, whatever this is set to, because it is the only thing separating the voices in the room.
 - **Keep audio**: in Settings under Audio, off by default, so audio is deleted once the note is saved. Turn it on and choose an audio folder to keep both tracks, named by the filename format (`{date} {time} {source} {track}`). If the copy fails, the audio stays in Application Support and the menu says so.
-- **Launch at login**: toggle in Settings under General.
 - **Recent Recordings** — the last five notes (three while Needs Attention is showing) appear in the menu, each row opening its note, with a button for the notes folder and *Clear…* for the list; history persists in `~/Library/Application Support/WhatDidISay/history.json`. Removing an entry only removes it from the list; it never deletes files.
 - **Needs Attention** — a recording that never became a note (processing failed or was cancelled, or the app crashed or quit mid-call) is kept and listed under *Needs Attention* in the menu, including after a relaunch. Make a note from each one, *Make All Notes*, or delete it. Each recording folder carries a `session.json` progress marker (`recording` → `recorded` → `transcribed` → `noted`) and, once transcription finishes, a `transcript.json`, so a retry after a crash in review or summary skips straight past transcription. Folders from before the marker existed are recovered from their name and audio.

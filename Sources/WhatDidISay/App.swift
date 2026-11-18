@@ -1,5 +1,5 @@
-import AppKit
 import SwiftUI
+import AppKit
 
 enum AppInfo {
     static let displayName = "What Did I Say"
@@ -15,10 +15,8 @@ struct AppHeader<Trailing: View>: View {
                 .font(.callout.weight(.semibold))
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 24, height: 24)
-                .background(
-                    Color.accentColor.opacity(0.15),
-                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                )
+                .background(Color.accentColor.opacity(0.15),
+                            in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .accessibilityHidden(true)
             Text(AppInfo.displayName).font(.headline)
             Spacer()
@@ -61,15 +59,11 @@ enum MenuBarIcon {
             // still reads as recording.
             let record = symbol("record.circle.fill", color: .systemRed)
             let badge = symbol("exclamationmark.triangle.fill", color: .systemOrange, pointSize: 8)
-            let image = NSImage(
-                size: NSSize(width: record.size.width + 3, height: record.size.height),
-                flipped: false
-            ) { rect in
+            let image = NSImage(size: NSSize(width: record.size.width + 3, height: record.size.height),
+                                flipped: false) { rect in
                 record.draw(in: NSRect(origin: .zero, size: record.size))
-                badge.draw(
-                    in: NSRect(
-                        x: rect.maxX - badge.size.width, y: 0,
-                        width: badge.size.width, height: badge.size.height))
+                badge.draw(in: NSRect(x: rect.maxX - badge.size.width, y: 0,
+                                      width: badge.size.width, height: badge.size.height))
                 return true
             }
             image.isTemplate = false
@@ -104,13 +98,12 @@ struct WhatDidISayApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuContent(
-                recorder: coordinator.recorder,
-                settings: coordinator.settings,
-                permissions: coordinator.permissions,
-                history: coordinator.recorder.history,
-                levels: coordinator.recorder.levels,
-                onShowReview: { coordinator.participantReview.bringToFront() })
+            MenuContent(recorder: coordinator.recorder,
+                        settings: coordinator.settings,
+                        permissions: coordinator.permissions,
+                        history: coordinator.recorder.history,
+                        levels: coordinator.recorder.levels,
+                        onShowReview: { coordinator.participantReview.bringToFront() })
         } label: {
             let status = MenuBarIcon.status(of: coordinator.recorder)
             Image(nsImage: MenuBarIcon.image(status))
@@ -119,9 +112,8 @@ struct WhatDidISayApp: App {
         .menuBarExtraStyle(.window)
 
         SwiftUI.Settings {
-            SettingsView(
-                settings: coordinator.settings, permissions: coordinator.permissions,
-                recorder: coordinator.recorder)
+            SettingsView(settings: coordinator.settings, permissions: coordinator.permissions,
+                         recorder: coordinator.recorder)
         }
     }
 }
@@ -206,11 +198,9 @@ struct MenuContent: View {
         } message: {
             Text("Its audio is kept and shows under Needs Attention when you reopen the app.")
         }
-        .confirmationDialog(
-            "Delete the \(deleting.map(PendingRow.name) ?? "recording")?",
-            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-            presenting: deleting
-        ) { session in
+        .confirmationDialog("Delete the \(deleting.map(PendingRow.name) ?? "recording")?",
+                            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            presenting: deleting) { session in
             Button("Delete Recording", role: .destructive) { Task { await recorder.discard(session) } }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
@@ -243,13 +233,10 @@ struct MenuContent: View {
     private var currentJob: some View {
         switch recorder.state {
         case .recording(let since):
-            RecordingStatus(
-                since: since, source: recorder.lastSource,
-                folderPath: settings.outputFolderPath,
-                levels: levels, issue: recorder.captureWarning)
-            Button {
-                Task { await recorder.toggle() }
-            } label: {
+            RecordingStatus(since: since, source: recorder.lastSource,
+                            folderPath: settings.outputFolderPath,
+                            levels: levels, issue: recorder.captureWarning)
+            Button { Task { await recorder.toggle() } } label: {
                 recordLabel("Stop Recording", symbol: "stop.circle.fill")
             }
             .buttonStyle(.borderedProminent)
@@ -261,16 +248,14 @@ struct MenuContent: View {
             // Waiting on the user, not working: no spinner. Recording stays one click
             // away, as it is on the call prompt; starting parks this review under Needs
             // Attention to name later.
-            ProcessingCard(
-                title: "Who was talking?", source: recorder.processingSource,
-                waitingOnUser: true, onReview: onShowReview)
+            ProcessingCard(title: "Who was talking?", source: recorder.processingSource,
+                           waitingOnUser: true, onReview: onShowReview)
             startControls
         case .processing(let stage):
             // Cancelling once the note is being written could leave it written and
             // queued for a retry, so the last stage runs to the end.
-            ProcessingCard(
-                title: stage.title, source: recorder.processingSource,
-                onCancel: stage == .saving ? nil : { recorder.cancelProcessing() })
+            ProcessingCard(title: stage.title, source: recorder.processingSource,
+                           onCancel: stage == .saving ? nil : { recorder.cancelProcessing() })
         case .idle, .failed:
             startControls
         }
@@ -282,16 +267,12 @@ struct MenuContent: View {
     private var startControls: some View {
         HStack(spacing: 6) {
             if permissions.screenRecording.isGranted {
-                Button {
-                    begin(.manual)
-                } label: {
+                Button { begin(.manual) } label: {
                     recordLabel("Record a Call", symbol: "record.circle")
                 }
                 // Both kinds of recording in plain sight: a stranger in a meeting room
                 // shouldn't have to find the second one inside a menu.
-                Button {
-                    begin(.inPerson)
-                } label: {
+                Button { begin(.inPerson) } label: {
                     Text("In Person")
                         .font(.body.weight(.semibold))
                         .padding(.vertical, 3)
@@ -303,9 +284,7 @@ struct MenuContent: View {
             } else {
                 // Without Screen Recording only the room can be recorded, so that's
                 // the one button; the line below says how to add calls.
-                Button {
-                    begin(.inPerson)
-                } label: {
+                Button { begin(.inPerson) } label: {
                     recordLabel("Record in Person", symbol: "record.circle")
                 }
             }
@@ -364,18 +343,15 @@ struct MenuContent: View {
     }
 
     private var folderBanner: some View {
-        setupStep(
-            "Choose where notes are saved", symbol: "folder",
-            detail: "Pick a folder or Obsidian vault. Each recording becomes a markdown note there.",
-            action: "Choose Notes Folder…", perform: settings.chooseOutputFolder)
+        setupStep("Choose where notes are saved", symbol: "folder",
+                  detail: "Pick a folder or Obsidian vault. Each recording becomes a markdown note there.",
+                  action: "Choose Notes Folder…", perform: settings.chooseOutputFolder)
     }
 
     /// A setup step the menu can't record without: what's missing, why, and the one
     /// prominent button that fixes it. The microphone and the notes folder look alike.
-    private func setupStep(
-        _ title: String, symbol: String, detail: String,
-        action: String, perform: @escaping () -> Void
-    ) -> some View {
+    private func setupStep(_ title: String, symbol: String, detail: String,
+                           action: String, perform: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Caution(title, symbol: symbol, tint: .accentColor)
             Text(detail)
@@ -461,11 +437,10 @@ struct MenuContent: View {
     private func pendingRows(_ sessions: some Sequence<RecordingSession>) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(sessions), id: \.id) { session in
-                PendingRow(
-                    session: session,
-                    blockedReason: processBlockedReason,
-                    onProcess: { Task { await recorder.retry(session) } },
-                    onDelete: { deleting = session })
+                PendingRow(session: session,
+                           blockedReason: processBlockedReason,
+                           onProcess: { Task { await recorder.retry(session) } },
+                           onDelete: { deleting = session })
             }
         }
     }
@@ -487,8 +462,7 @@ struct MenuContent: View {
             Divider()
             historySection
         } else if permissions.allGranted && settings.hasOutputFolder && recorder.needsAttention.isEmpty
-            && recorder.state.isIdle && recorder.lastSave == nil
-        {
+                    && recorder.state.isIdle && recorder.lastSave == nil {
             Divider()
             VStack(spacing: 5) {
                 Image(systemName: "waveform.and.mic")
@@ -529,11 +503,9 @@ struct MenuContent: View {
     /// Nothing can be recorded without the microphone, so this is the first step and
     /// its button is the prominent one.
     private var permissionsBanner: some View {
-        setupStep(
-            "Allow the microphone to start recording", symbol: "mic",
-            detail: "It records your side of a call, and everyone in the room in person.",
-            action: permissions.microphone == .denied ? "Open System Settings" : "Allow Microphone…"
-        ) {
+        setupStep("Allow the microphone to start recording", symbol: "mic",
+                  detail: "It records your side of a call, and everyone in the room in person.",
+                  action: permissions.microphone == .denied ? "Open System Settings" : "Allow Microphone…") {
             Task { await permissions.request(.microphone) }
         }
     }
@@ -619,9 +591,7 @@ private struct ProcessingCard: View {
         .controlSize(.small)
         .padding(.horizontal, 10).padding(.vertical, 9)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .help(
-            waitingOnUser
-                ? "The note is saved once you've named the speakers." : "You can record again once this note is saved.")
+        .help(waitingOnUser ? "The note is saved once you've named the speakers." : "You can record again once this note is saved.")
     }
 }
 
@@ -666,16 +636,14 @@ private struct RecordingStatus: View {
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
-        .background(
-            .quaternary.opacity(0.5),
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(.quaternary.opacity(0.5),
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func meterRow(_ name: String, symbol: String, level: Float, isSilent: Bool) -> some View {
         HStack(spacing: 8) {
-            ChannelMeter(
-                symbol: symbol, name: "\(name) level",
-                level: level, isSilent: isSilent, segments: 14)
+            ChannelMeter(symbol: symbol, name: "\(name) level",
+                         level: level, isSilent: isSilent, segments: 14)
             Text(name)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -696,24 +664,18 @@ private struct PendingRow: View {
     var body: some View {
         HStack(spacing: 4) {
             // What's missing leads, since that's what the row asks you to act on.
-            RowText(
-                title: session.source.recordingName,
-                subtitle: "\(status) · \(Self.when(session))", subtitleLines: 1
-            )
-            .help("\(status) · \(Self.when(session)) · \(ElapsedTime.length(session.duration))")
+            RowText(title: session.source.recordingName,
+                    subtitle: "\(status) · \(Self.when(session))", subtitleLines: 1)
+                .help("\(status) · \(Self.when(session)) · \(ElapsedTime.length(session.duration))")
             Spacer()
             // The way to recover, so it's drawn at full strength; delete stays quiet.
-            IconButton(
-                symbol: waitingForNames ? "person.2" : "arrow.clockwise",
-                label: "\(waitingForNames ? "Name the speakers" : "Make a note"), \(Self.name(session))",
-                help: blockedReason
-                    ?? (waitingForNames ? "Name the speakers and save the note" : "Make a note from this recording"),
-                emphasized: true, action: onProcess
-            )
-            .disabled(blockedReason != nil)
-            IconButton(
-                symbol: "trash", label: "Delete \(Self.name(session))",
-                help: "Delete recording", emphasized: hovering, action: onDelete)
+            IconButton(symbol: waitingForNames ? "person.2" : "arrow.clockwise",
+                       label: "\(waitingForNames ? "Name the speakers" : "Make a note"), \(Self.name(session))",
+                       help: blockedReason ?? (waitingForNames ? "Name the speakers and save the note" : "Make a note from this recording"),
+                       emphasized: true, action: onProcess)
+                .disabled(blockedReason != nil)
+            IconButton(symbol: "trash", label: "Delete \(Self.name(session))",
+                       help: "Delete recording", emphasized: hovering, action: onDelete)
         }
         .rowChrome(hovering: hovering)
         .onHover { hovering = $0 }
@@ -733,8 +695,7 @@ private struct PendingRow: View {
 
     /// What's still missing, not how far it got.
     private var status: String {
-        session.setAsideReason
-            ?? (session.progress == .transcribed ? "transcribed, note not saved" : "not transcribed yet")
+        session.setAsideReason ?? (session.progress == .transcribed ? "transcribed, note not saved" : "not transcribed yet")
     }
 }
 
@@ -753,9 +714,7 @@ private struct HistoryRow: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Button {
-                if let note { NSWorkspace.shared.open(note) }
-            } label: {
+            Button { if let note { NSWorkspace.shared.open(note) } } label: {
                 RowText(title: entry.source, subtitle: subtitle)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
@@ -767,15 +726,13 @@ private struct HistoryRow: View {
             .accessibilityHint(note == nil ? "" : "Opens the note")
             .accessibilityAction(named: "Remove from list", onRemove)
 
-            IconButton(
-                symbol: "minus.circle", label: "Remove \(entry.source) from list",
-                help: "Remove from list (the note is kept)", action: onRemove
-            )
-            .opacity(hovering ? 1 : 0)
-            // Hidden controls mustn't take keyboard focus; the context menu and the
-            // accessibility action cover keyboard and VoiceOver.
-            .disabled(!hovering)
-            .accessibilityHidden(true)
+            IconButton(symbol: "minus.circle", label: "Remove \(entry.source) from list",
+                       help: "Remove from list (the note is kept)", action: onRemove)
+                .opacity(hovering ? 1 : 0)
+                // Hidden controls mustn't take keyboard focus; the context menu and the
+                // accessibility action cover keyboard and VoiceOver.
+                .disabled(!hovering)
+                .accessibilityHidden(true)
         }
         .rowChrome(hovering: hovering)
         .onHover { hovering = $0 }
@@ -831,8 +788,7 @@ private extension View {
     /// The menu row's padding and its hover highlight.
     func rowChrome(hovering: Bool) -> some View {
         padding(.horizontal, 8).padding(.vertical, 4)
-            .background(
-                hovering ? Color.primary.opacity(0.07) : .clear,
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background(hovering ? Color.primary.opacity(0.07) : .clear,
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }

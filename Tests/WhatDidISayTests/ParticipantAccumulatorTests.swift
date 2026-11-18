@@ -1,5 +1,4 @@
 import Testing
-
 @testable import WhatDidISay
 
 @Suite struct ParticipantAccumulatorTests {

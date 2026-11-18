@@ -1,5 +1,4 @@
 import Testing
-
 @testable import WhatDidISay
 
 @MainActor
@@ -13,12 +12,8 @@ import Testing
         var checked: [String] = []
         let source = await CallDetector.resolveSource(
             frontmost: frontmost,
-            hasMeetTab: {
-                checked.append("meet"); return meetTab
-            },
-            backgroundCallApp: {
-                checked.append("background"); return background
-            }
+            hasMeetTab: { checked.append("meet"); return meetTab },
+            backgroundCallApp: { checked.append("background"); return background }
         )
         return (source, checked)
     }

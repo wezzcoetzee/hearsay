@@ -1,5 +1,5 @@
-import Combine
 import Foundation
+import Combine
 
 struct HistoryEntry: Codable, Identifiable {
     let id: UUID
@@ -29,8 +29,7 @@ final class RecordingHistory: ObservableObject {
 
     init(fileURL: URL = RecordingHistory.defaultFileURL) {
         self.fileURL = fileURL
-        try? FileManager.default.createDirectory(
-            at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         load()
     }
 

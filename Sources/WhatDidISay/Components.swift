@@ -1,11 +1,10 @@
-import AppKit
 import SwiftUI
+import AppKit
 
 /// Words shared by more than one surface.
 enum Copy {
     static let deleteRecordingConsequence = "The audio is deleted and no note is saved. This can't be undone."
-    static let autoDetectExplanation =
-        "Offers to record when a Slack huddle, Teams call or Google Meet starts. Nothing records until you click Start Recording on that prompt."
+    static let autoDetectExplanation = "Offers to record when a Slack huddle, Teams call or Google Meet starts. Nothing records until you click Start Recording on that prompt."
     static let autoDetectNeedsScreenRecording = "Needs Screen Recording, since only calls are detected."
     static let relaunchHint = "Allowed Screen Recording? Relaunch to apply it."
     /// The one moment anything leaves the Mac, worded once wherever it's shown.

@@ -12,8 +12,7 @@ enum AccessibilityTree {
     static func children(_ element: AXUIElement) -> [AXUIElement] {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value) == .success,
-            let children = value as? [AXUIElement]
-        else { return [] }
+              let children = value as? [AXUIElement] else { return [] }
         return children
     }
 

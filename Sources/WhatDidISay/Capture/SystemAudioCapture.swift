@@ -1,5 +1,5 @@
-import AVFoundation
 import Foundation
+import AVFoundation
 import ScreenCaptureKit
 
 final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
@@ -29,8 +29,7 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
 
         let filter: SCContentFilter
         if let targetBundleID,
-            let app = content.applications.first(where: { $0.bundleIdentifier == targetBundleID })
-        {
+           let app = content.applications.first(where: { $0.bundleIdentifier == targetBundleID }) {
             filter = SCContentFilter(display: display, including: [app], exceptingWindows: [])
         } else {
             filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
@@ -49,14 +48,12 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
         // An unfragmented m4a has no index until `finishWriting`, so a crash mid-call
         // would leave it unreadable. Fragments keep everything up to the last one playable.
         writer.movieFragmentInterval = CMTime(seconds: 10, preferredTimescale: 600)
-        let input = AVAssetWriterInput(
-            mediaType: .audio,
-            outputSettings: [
-                AVFormatIDKey: kAudioFormatMPEG4AAC,
-                AVSampleRateKey: 48_000,
-                AVNumberOfChannelsKey: 2,
-                AVEncoderBitRateKey: 128_000,
-            ])
+        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: 48_000,
+            AVNumberOfChannelsKey: 2,
+            AVEncoderBitRateKey: 128_000
+        ])
         input.expectsMediaDataInRealTime = true
         guard writer.canAdd(input) else { throw CaptureError.writerSetupFailed }
         writer.add(input)
