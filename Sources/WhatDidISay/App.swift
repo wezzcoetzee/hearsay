@@ -135,9 +135,9 @@ struct MenuContent: View {
     let levels: AudioLevelMonitor
     var onShowReview: () -> Void = {}
 
-    @State private var showConsentAlert = false
-    @State private var pendingSource: RecordingSource = .manual
-    @State private var confirmingQuit = false
+    // Confirmations in the menu are asked inline, never in a dialog: one attached to
+    // the menu window is a window of its own, and a click there closes the menu before
+    // the button acts. One question at a time, so Esc has one thing to cancel.
     @State private var confirmingClear = false
     @State private var deleting: RecordingSession?
     @State private var showingAllPending = false
@@ -185,56 +185,43 @@ struct MenuContent: View {
             // recorded with nowhere to go.
             settings.revalidateFolders()
             recorder.saveConfirmationSeen()
-        }
-        .alert("Start recording?", isPresented: $showConsentAlert) {
-            Button("Cancel", role: .cancel) {}
-            Button("Start Recording") {
-                settings.hasAcknowledgedConsent = true
-                Task { await record(pendingSource) }
-            }
-        } message: {
-            Text(Copy.consent(for: pendingSource, cloud: settings.cloudSummaryActive))
-        }
-        .alert("Quit before this call is a note?", isPresented: $confirmingQuit) {
-            Button("Cancel", role: .cancel) {}
-            Button("Quit", role: .destructive) {
-                Task {
-                    await recorder.finishForQuit()
-                    NSApplication.shared.terminate(nil)
-                }
-            }
-        } message: {
-            Text("Its audio is kept and shows under Needs Attention when you reopen the app.")
-        }
-        .confirmationDialog(
-            "Delete the \(deleting.map(PendingRow.name) ?? "recording")?",
-            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-            presenting: deleting
-        ) { session in
-            Button("Delete Recording", role: .destructive) { Task { await recorder.discard(session) } }
-            Button("Cancel", role: .cancel) {}
-        } message: { _ in
-            Text(Copy.deleteRecordingConsequence)
-        }
-        .confirmationDialog("Clear the recent recordings list?", isPresented: $confirmingClear) {
-            Button("Clear List", role: .destructive) { history.clear() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Only the list is cleared. Your notes stay in \(settings.outputFolderName ?? "your notes folder").")
+            // A question left open when the menu closed isn't one the user is still asking.
+            deleting = nil
+            confirmingClear = false
         }
     }
 
     private var header: some View {
         AppHeader {
             IconButton(symbol: "power", label: "Quit \(AppInfo.displayName)", help: "Quit") {
-                if recorder.isBusy {
-                    confirmingQuit = true
-                } else {
+                guard recorder.isBusy else { return NSApplication.shared.terminate(nil) }
+                guard
+                    Self.confirmInAlert(
+                        "Quit before this call is a note?",
+                        message: "Its audio is kept and shows under Needs Attention when you reopen the app.",
+                        action: "Quit", destructive: true)
+                else { return }
+                Task {
+                    await recorder.finishForQuit()
                     NSApplication.shared.terminate(nil)
                 }
             }
             .keyboardShortcut("q")
         }
+    }
+
+    /// For the questions that can't sit in a menu row. A standalone alert, run modally,
+    /// so its answer comes back even though clicking it closes the menu.
+    private static func confirmInAlert(
+        _ title: String, message: String, action: String, destructive: Bool = false
+    ) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: action).hasDestructiveAction = destructive
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate()
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     /// One slot always holds what the app is doing: the live recording with its Stop
@@ -328,12 +315,16 @@ struct MenuContent: View {
     }
 
     private func begin(_ source: RecordingSource) {
-        pendingSource = source
-        if settings.hasAcknowledgedConsent {
-            Task { await record(source) }
-        } else {
-            showConsentAlert = true
+        if !settings.hasAcknowledgedConsent {
+            guard
+                Self.confirmInAlert(
+                    "Start recording?",
+                    message: Copy.consent(for: source, cloud: settings.cloudSummaryActive),
+                    action: "Start Recording")
+            else { return }
+            settings.hasAcknowledgedConsent = true
         }
+        Task { await record(source) }
     }
 
     /// Starts recording; a review still waiting for names is parked to name later.
@@ -464,8 +455,14 @@ struct MenuContent: View {
                 PendingRow(
                     session: session,
                     blockedReason: processBlockedReason,
+                    confirmingDelete: Binding(
+                        get: { deleting?.id == session.id },
+                        set: { asking in
+                            confirmingClear = false
+                            deleting = asking ? session : nil
+                        }),
                     onProcess: { Task { await recorder.retry(session) } },
-                    onDelete: { deleting = session })
+                    onDelete: { Task { await recorder.discard(session) } })
             }
         }
     }
@@ -558,22 +555,39 @@ struct MenuContent: View {
 
     private var historySection: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                Text("Recent Recordings")
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                Spacer()
-                if let folder = settings.outputFolderPath {
-                    IconButton(symbol: "folder", label: "Open the notes folder") {
-                        NSWorkspace.shared.open(URL(fileURLWithPath: folder))
+            if confirmingClear {
+                InlineConfirm(
+                    question: "Clear the recent recordings list?",
+                    detail: "Notes stay in \(settings.outputFolderName ?? "your notes folder")",
+                    action: "Clear",
+                    onCancel: { confirmingClear = false },
+                    onConfirm: {
+                        confirmingClear = false
+                        history.clear()
                     }
-                }
-                Button("Clear…") { confirmingClear = true }
+                )
+                .padding(.horizontal, 2)
+            } else {
+                HStack(spacing: 6) {
+                    Text("Recent Recordings")
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                    Spacer()
+                    if let folder = settings.outputFolderPath {
+                        IconButton(symbol: "folder", label: "Open the notes folder") {
+                            NSWorkspace.shared.open(URL(fileURLWithPath: folder))
+                        }
+                    }
+                    Button("Clear…") {
+                        deleting = nil
+                        confirmingClear = true
+                    }
                     .buttonStyle(.borderless)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .help("Clear this list. Notes are not deleted.")
+                }
+                .padding(.horizontal, 2)
             }
-            .padding(.horizontal, 2)
             ForEach(history.entries.prefix(visibleHistory)) { entry in
                 HistoryRow(entry: entry, onRemove: { history.remove(entry) })
             }
@@ -686,12 +700,33 @@ private struct RecordingStatus: View {
 private struct PendingRow: View {
     let session: RecordingSession
     let blockedReason: String?
+    /// The row is asking whether to delete, in place of its usual content.
+    @Binding var confirmingDelete: Bool
     let onProcess: () -> Void
     let onDelete: () -> Void
 
     @State private var hovering = false
 
     var body: some View {
+        Group {
+            if confirmingDelete {
+                InlineConfirm(
+                    question: "Delete \(session.source.recordingName)?",
+                    detail: "\(Self.when(session)) · can't be undone",
+                    action: "Delete",
+                    onCancel: { confirmingDelete = false },
+                    onConfirm: onDelete
+                )
+                .help(Copy.deleteRecordingConsequence)
+            } else {
+                content
+            }
+        }
+        .rowChrome(hovering: hovering || confirmingDelete)
+        .onHover { hovering = $0 }
+    }
+
+    private var content: some View {
         HStack(spacing: 4) {
             // What's missing leads, since that's what the row asks you to act on.
             RowText(
@@ -710,14 +745,13 @@ private struct PendingRow: View {
             .disabled(blockedReason != nil)
             IconButton(
                 symbol: "trash", label: "Delete \(Self.name(session))",
-                help: "Delete recording", emphasized: hovering, action: onDelete)
+                help: "Delete recording", emphasized: hovering
+            ) { confirmingDelete = true }
         }
-        .rowChrome(hovering: hovering)
-        .onHover { hovering = $0 }
     }
 
     /// Which recording, in words that tell rows of the same app apart: for VoiceOver
-    /// labels and the delete confirmation.
+    /// labels.
     static func name(_ session: RecordingSession) -> String {
         "\(session.source.recordingName) from \(when(session))"
     }
@@ -798,6 +832,31 @@ private struct HistoryRow: View {
         guard let names = entry.participants, !names.isEmpty else { return nil }
         let shown = names.prefix(2).joined(separator: ", ")
         return names.count > 2 ? "\(shown) +\(names.count - 2)" : shown
+    }
+}
+
+/// A yes-or-no question asked where the thing it's about sits, with Cancel (Esc) and
+/// the destructive action beside it. See `MenuContent` for why the menu never uses a
+/// dialog.
+private struct InlineConfirm: View {
+    let question: String
+    let detail: String
+    let action: String
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            RowText(title: question, subtitle: detail, subtitleLines: 1)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Button("Cancel", action: onCancel)
+                .keyboardShortcut(.cancelAction)
+            Button(action, role: .destructive, action: onConfirm)
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+        }
+        .controlSize(.small)
     }
 }
 

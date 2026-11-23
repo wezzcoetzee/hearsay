@@ -310,3 +310,4 @@ Every control is a stock SwiftUI/AppKit primitive used with its default styling.
 - **Don't** set explicit point sizes on body text; only SF Symbol glyphs in onboarding headers get an explicit `.system(size:)`.
 - **Don't** spend red, green, or orange on decoration; each is a state signal, not a highlight.
 - **Don't** loop an animation (pulsing dots, shimmering placeholders); a still glyph says "waiting" and a system spinner says "working."
+- **Don't** attach `.alert` or `.confirmationDialog` to the menu. The sheet is its own window, so clicking it closes the menu before the button acts. Ask inline in the row it's about (`InlineConfirm`, Cancel on Esc); a question with no row (Quit while recording, the first-recording consent) uses a standalone `NSAlert` run modally.
