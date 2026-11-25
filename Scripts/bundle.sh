@@ -3,7 +3,7 @@ set -euo pipefail
 
 CONFIG="${1:-release}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP_NAME="WhatDidISay"
+APP_NAME="Hearsay"
 APP_DIR="$ROOT/build/$APP_NAME.app"
 
 echo "▸ Building ($CONFIG)…"

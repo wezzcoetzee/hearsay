@@ -6,7 +6,7 @@ set -euo pipefail
 
 APP="$1"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-IDENTITY="${SIGN_IDENTITY:-WhatDidISay Local Signing}"
+IDENTITY="${SIGN_IDENTITY:-Hearsay Local Signing}"
 
 if ! security find-identity -p codesigning | grep -qF "\"$IDENTITY\""; then
     echo "⚠ No \"$IDENTITY\" identity; signing ad-hoc. Permissions will re-prompt after each rebuild."
@@ -17,6 +17,6 @@ fi
 echo "▸ Signing with ${IDENTITY/#-/ad-hoc}…"
 codesign --force --sign "$IDENTITY" \
     --options runtime \
-    --entitlements "$ROOT/Resources/WhatDidISay.entitlements" \
+    --entitlements "$ROOT/Resources/Hearsay.entitlements" \
     "$APP"
 codesign --verify --strict "$APP"

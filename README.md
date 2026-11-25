@@ -1,4 +1,4 @@
-# What Did I Say
+# Hearsay
 
 macOS menu-bar app that detects Slack huddles / Teams calls / Google Meet (in the browser), records both sides, transcribes locally with WhisperKit, and writes a markdown note to your Obsidian vault. It also records in-person meetings from the laptop microphone alone.
 
@@ -23,12 +23,12 @@ See [DESIGN.md](DESIGN.md) for the full design and [PRODUCT.md](PRODUCT.md) for 
 ```sh
 ./Scripts/setup-signing.sh   # once per machine
 ./Scripts/bundle.sh release
-open build/WhatDidISay.app
+open build/Hearsay.app
 ```
 
 `bundle.sh` compiles the executable, wraps it in a `.app`, and signs it with the hardened runtime via `Scripts/sign.sh`.
 
-To walk through the setup guide again on a Mac that's already set up, launch with `open build/WhatDidISay.app --args -showSetupGuide YES`. It applies to that launch only.
+To walk through the setup guide again on a Mac that's already set up, launch with `open build/Hearsay.app --args -showSetupGuide YES`. It applies to that launch only.
 
 ### Screenshots
 
@@ -38,9 +38,9 @@ To walk through the setup guide again on a Mac that's already set up, launch wit
 open build/screenshots/index.html
 ```
 
-Renders every surface (menu, floating panel, call prompt, participant review, onboarding, Settings) in its main states, light and dark, plus a contact sheet. It runs as a test against throwaway fixtures, offscreen, so it needs no permissions and never touches your settings, history, recordings or API key. Scenes live in `Tests/WhatDidISayTests/Screenshots/ScreenshotCatalog.swift`; add one there when you add a state. The App Store frames (headline beside the real views, rendered from the same fixtures) live in `AppStoreScreenshots.swift` beside it. Switches render with their unfocused grey track even when on (the knob still shows the state).
+Renders every surface (menu, floating panel, call prompt, participant review, onboarding, Settings) in its main states, light and dark, plus a contact sheet. It runs as a test against throwaway fixtures, offscreen, so it needs no permissions and never touches your settings, history, recordings or API key. Scenes live in `Tests/HearsayTests/Screenshots/ScreenshotCatalog.swift`; add one there when you add a state. The App Store frames (headline beside the real views, rendered from the same fixtures) live in `AppStoreScreenshots.swift` beside it. Switches render with their unfocused grey track even when on (the knob still shows the state).
 
-`setup-signing.sh` creates a self-signed "WhatDidISay Local Signing" certificate in the login keychain. Every build signed with it gets the same designated requirement (bundle id plus certificate), so macOS keeps Microphone and Screen Recording grants across rebuilds. Without it, `sign.sh` falls back to ad-hoc signing, which ties grants to the binary hash and re-prompts after every build. Override the identity with `SIGN_IDENTITY="..."`. The certificate is only meant for local builds: other Macs still need a Developer ID signature and notarization.
+`setup-signing.sh` creates a self-signed "Hearsay Local Signing" certificate in the login keychain. Every build signed with it gets the same designated requirement (bundle id plus certificate), so macOS keeps Microphone and Screen Recording grants across rebuilds. Without it, `sign.sh` falls back to ad-hoc signing, which ties grants to the binary hash and re-prompts after every build. Override the identity with `SIGN_IDENTITY="..."`. The certificate is only meant for local builds: other Macs still need a Developer ID signature and notarization.
 
 On first launch a setup guide walks through the permissions and the notes folder:
 
@@ -68,7 +68,7 @@ If diarization splits one person into two voices, the − next to a voice folds 
 ## Layout
 
 ```
-Sources/WhatDidISay/
+Sources/Hearsay/
 ├── App.swift                      MenuBarExtra UI
 ├── Components.swift               shared Caution, IconButton, FolderChoice, RelaunchButton, Copy
 ├── Presentation.swift             shared names and symbols, VoiceOver Announcer
@@ -108,5 +108,5 @@ Sources/WhatDidISay/
 - **AI summary** — toggle in Settings under Summary. *Local* uses [Ollama](https://ollama.com) on `localhost:11434` (set the model name; default `llama3.2`). *Cloud* uses the Anthropic API (`claude-opus-5-5`) — paste an API key (stored in the macOS Keychain). A "## Summary" + action-items section is prepended to each note, and the summary's one-line topic titles the note and its filename. The summary runs after you confirm participants, so it uses real names, and a call you delete is never summarized. If the summary can't be made (Ollama not running, no API key), the note says why instead of silently leaving it out.
 - **Separate remote speakers** — toggle in Settings under Notes to run SpeakerKit diarization on the system-audio track, relabeling `Others` as `Speaker 1`, `Speaker 2`, … Downloads a diarization model on first use. In-person recordings always diarize, whatever this is set to, because it is the only thing separating the voices in the room.
 - **Keep audio**: in Settings under Audio, off by default, so audio is deleted once the note is saved. Turn it on and choose an audio folder to keep both tracks, named by the filename format (`{date} {time} {source} {track}`). If the copy fails, the audio stays in Application Support and the menu says so.
-- **Recent Recordings** — the last five notes (three while Needs Attention is showing) appear in the menu, each row opening its note, with a button for the notes folder and *Clear…* for the list; history persists in `~/Library/Application Support/WhatDidISay/history.json`. Removing an entry only removes it from the list; it never deletes files.
+- **Recent Recordings** — the last five notes (three while Needs Attention is showing) appear in the menu, each row opening its note, with a button for the notes folder and *Clear…* for the list; history persists in `~/Library/Application Support/Hearsay/history.json`. Removing an entry only removes it from the list; it never deletes files.
 - **Needs Attention** — a recording that never became a note (processing failed or was cancelled, or the app crashed or quit mid-call) is kept and listed under *Needs Attention* in the menu, including after a relaunch. Make a note from each one, *Make All Notes*, or delete it. Each recording folder carries a `session.json` progress marker (`recording` → `recorded` → `transcribed` → `noted`) and, once transcription finishes, a `transcript.json`, so a retry after a crash in review or summary skips straight past transcription. Folders from before the marker existed are recovered from their name and audio.

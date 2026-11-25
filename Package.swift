@@ -2,29 +2,29 @@
 import PackageDescription
 
 let package = Package(
-    name: "WhatDidISay",
+    name: "Hearsay",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "WhatDidISay", targets: ["WhatDidISay"])
+        .executable(name: "Hearsay", targets: ["Hearsay"])
     ],
     dependencies: [
         .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", from: "0.9.0")
     ],
     targets: [
         .executableTarget(
-            name: "WhatDidISay",
+            name: "Hearsay",
             dependencies: [
                 "ObjCExceptionCatcher",
                 .product(name: "WhisperKit", package: "argmax-oss-swift"),
                 .product(name: "SpeakerKit", package: "argmax-oss-swift"),
             ],
-            path: "Sources/WhatDidISay"
+            path: "Sources/Hearsay"
         ),
         .target(name: "ObjCExceptionCatcher", path: "Sources/ObjCExceptionCatcher"),
         .testTarget(
-            name: "WhatDidISayTests",
-            dependencies: ["WhatDidISay", "ObjCExceptionCatcher"],
-            path: "Tests/WhatDidISayTests"
+            name: "HearsayTests",
+            dependencies: ["Hearsay", "ObjCExceptionCatcher"],
+            path: "Tests/HearsayTests"
         ),
     ]
 )
