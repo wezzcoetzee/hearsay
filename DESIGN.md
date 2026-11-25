@@ -1,5 +1,5 @@
 ---
-name: What Did I Say
+name: Hearsay
 description: A macOS menu-bar recorder that transcribes calls on-device and files notes to your vault, dressed entirely in system-native materials.
 colors:
   accent-tint: "#007AFF"
@@ -126,7 +126,7 @@ components:
     height: "92px"
 ---
 
-# Design System: What Did I Say
+# Design System: Hearsay
 
 ## Overview
 

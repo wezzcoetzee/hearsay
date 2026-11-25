@@ -5,7 +5,7 @@
 # across rebuilds. Ad-hoc signatures tie grants to the binary hash instead.
 set -euo pipefail
 
-IDENTITY="${SIGN_IDENTITY:-WhatDidISay Local Signing}"
+IDENTITY="${SIGN_IDENTITY:-Hearsay Local Signing}"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 
 if security find-identity -p codesigning | grep -qF "\"$IDENTITY\""; then

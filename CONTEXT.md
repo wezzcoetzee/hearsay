@@ -1,6 +1,6 @@
 # Context
 
-Domain vocabulary for What Did I Say. Names here are the words to use in code, tests,
+Domain vocabulary for Hearsay. Names here are the words to use in code, tests,
 and architecture reviews.
 
 ## Core nouns

@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>WhatDidISay</string>
+    <string>Hearsay</string>
     <key>CFBundleDisplayName</key>
-    <string>What Did I Say</string>
+    <string>Hearsay</string>
     <key>CFBundleIdentifier</key>
-    <string>com.wcoetzee.whatdidisay</string>
+    <string>com.wcoetzee.hearsay</string>
     <key>CFBundleExecutable</key>
-    <string>WhatDidISay</string>
+    <string>Hearsay</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIconName</key>
@@ -25,8 +25,8 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>What Did I Say records your microphone to transcribe your side of huddles and calls.</string>
+    <string>Hearsay records your microphone to transcribe your side of huddles and calls.</string>
     <key>NSSystemAdministrationUsageDescription</key>
-    <string>What Did I Say captures system audio to transcribe the other participants in huddles and calls.</string>
+    <string>Hearsay captures system audio to transcribe the other participants in huddles and calls.</string>
 </dict>
 </plist>

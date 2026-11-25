@@ -2,7 +2,7 @@
 set -euo pipefail
 
 VERSION="${1:-0.1.0}"
-APP_NAME="WhatDidISay"
+APP_NAME="Hearsay"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIST="$ROOT/dist"
